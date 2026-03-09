@@ -1,0 +1,18 @@
+## Reglas del proyecto
+
+### Stack
+- React 18 con hooks funcionales
+- Vite como bundler
+- Supabase JS v2 para todas las queries
+- TailwindCSS para estilos
+
+### Convenciones
+- El cliente de Supabase siempre se importa desde @/lib/supabase
+- Todos los componentes van en /src/components
+- Las páginas (vistas) van en /src/pages
+- Usar async/await, nunca .then()
+- Manejar siempre los estados: loading, error y data
+
+### Lo que NO hacer
+- No usar Redux ni Context API para datos remotos
+- No hacer fetching directamente en componentes, usar custom hooks
