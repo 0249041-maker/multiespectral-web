@@ -202,24 +202,42 @@ export default function AdvancedMode() {
       {!supabase && (
         <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
           <p className="font-semibold text-amber-900">
-            Supabase no configurado
+            Supabase no está activo en esta versión publicada
           </p>
           <p className="mt-1 text-sm text-amber-800">
-            Para que <strong>cualquier persona</strong> vea los cubes desde
-            cualquier computadora, configura Supabase: crea un archivo{" "}
-            <code className="rounded bg-amber-100 px-1">.env</code> con{" "}
-            <code className="rounded bg-amber-100 px-1">VITE_SUPABASE_URL</code>{" "}
-            y{" "}
-            <code className="rounded bg-amber-100 px-1">VITE_SUPABASE_ANON_KEY</code>
-            , ejecuta{" "}
+            Por eso los cubes solo se guardan en <strong>este navegador</strong>{" "}
+            (IndexedDB) y otras personas u otros dispositivos no los ven.
+          </p>
+          <p className="mt-2 text-sm text-amber-900">
+            <strong>Si usas Vercel:</strong> el archivo <code>.env</code> de tu
+            PC no se sube a internet. Ve a tu proyecto en{" "}
+            <strong>Vercel → Settings → Environment Variables</strong> y añade
+            (para <strong>Production</strong> y, si quieres, Preview):
+          </p>
+          <ul className="mt-2 list-inside list-disc text-sm text-amber-800">
+            <li>
+              <code className="rounded bg-amber-100 px-1">VITE_SUPABASE_URL</code>{" "}
+              = la URL de tu proyecto Supabase
+            </li>
+            <li>
+              <code className="rounded bg-amber-100 px-1">
+                VITE_SUPABASE_ANON_KEY
+              </code>{" "}
+              = la anon key (pública)
+            </li>
+          </ul>
+          <p className="mt-2 text-sm text-amber-800">
+            Después pulsa <strong>Redeploy</strong> en el último deployment (las
+            variables Vite solo se aplican al construir el sitio).
+          </p>
+          <p className="mt-2 text-xs text-amber-700">
+            En Supabase, ejecuta también{" "}
             <code className="rounded bg-amber-100 px-1">
               supabase/configurar_acceso_publico.sql
             </code>{" "}
-            en el SQL Editor de Supabase, y reinicia la app.
-          </p>
-          <p className="mt-2 text-xs text-amber-700">
-            Sin Supabase, los cubes solo se guardan en este navegador y no se
-            comparten.
+            para que cualquiera pueda leer los cubes. En local, usa un archivo{" "}
+            <code className="rounded bg-amber-100 px-1">.env</code> con las
+            mismas variables.
           </p>
         </div>
       )}

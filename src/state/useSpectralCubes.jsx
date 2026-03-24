@@ -216,7 +216,7 @@ export function useSpectralCubes() {
           ? crypto.randomUUID()
           : `local-${Date.now()}`;
       persistError =
-        "Sin Supabase: las imágenes se guardan en este navegador (IndexedDB) y persisten al recargar.";
+        "Sin variables VITE_SUPABASE_* en el build (p. ej. en Vercel → Environment Variables), solo se guarda en este navegador. Añádelas y haz Redeploy.";
     }
 
     const blobsForIdb = {
