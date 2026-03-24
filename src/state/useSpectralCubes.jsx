@@ -21,11 +21,9 @@ function formatCaptureTimestamp(ts) {
   }).format(d);
 }
 
-function bandsFromCaptureRow(row) {
-  const ci = row.capture_images;
-  const first = Array.isArray(ci) ? ci[0] : ci;
-  if (!first) return null;
-  const { img_r, img_g, img_b, img_re, img_nir, img_ndvi } = first;
+function bandsFromImagesRow(row) {
+  if (!row) return null;
+  const { img_r, img_g, img_b, img_re, img_nir, img_ndvi } = row;
   if (!img_r && !img_g && !img_b && !img_nir) return null;
   return {
     r: img_r,
@@ -37,61 +35,51 @@ function bandsFromCaptureRow(row) {
   };
 }
 
-const CAPTURE_SELECT_WITH_NDVI = `
-      id,
-      timestamp,
-      capture_images (
-        img_r,
-        img_g,
-        img_b,
-        img_re,
-        img_nir,
-        img_ndvi
-      )
-    `;
-
-const CAPTURE_SELECT_BASIC = `
-      id,
-      timestamp,
-      capture_images (
-        img_r,
-        img_g,
-        img_b,
-        img_re,
-        img_nir
-      )
-    `;
-
+/**
+ * Carga captures e imágenes en dos consultas (más fiable que el embed anidado
+ * si falta la relación FK en PostgREST).
+ */
 async function loadCubesFromSupabase() {
   if (!supabase) {
     return [];
   }
 
-  let { data: captures, error } = await supabase
+  const { data: captures, error: capErr } = await supabase
     .from("captures")
-    .select(CAPTURE_SELECT_WITH_NDVI)
+    .select("id, timestamp")
     .order("timestamp", { ascending: false })
     .limit(20);
 
-  if (error) {
-    const msg = `${error.message ?? ""} ${error.details ?? ""}`;
-    if (/img_ndvi/i.test(msg)) {
-      const second = await supabase
-        .from("captures")
-        .select(CAPTURE_SELECT_BASIC)
-        .order("timestamp", { ascending: false })
-        .limit(20);
-      captures = second.data;
-      error = second.error;
+  if (capErr) throw capErr;
+  if (!captures?.length) return [];
+
+  const ids = captures.map((c) => c.id);
+
+  let imagesRows = [];
+  const withNdvi = await supabase
+    .from("capture_images")
+    .select("capture_id, img_r, img_g, img_b, img_re, img_nir, img_ndvi")
+    .in("capture_id", ids);
+
+  if (withNdvi.error) {
+    const msg = `${withNdvi.error.message ?? ""}`;
+    if (/img_ndvi|column/i.test(msg)) {
+      const basic = await supabase
+        .from("capture_images")
+        .select("capture_id, img_r, img_g, img_b, img_re, img_nir")
+        .in("capture_id", ids);
+      if (basic.error) throw basic.error;
+      imagesRows = basic.data ?? [];
+    } else {
+      throw withNdvi.error;
     }
+  } else {
+    imagesRows = withNdvi.data ?? [];
   }
 
-  if (error) {
-    throw error;
-  }
-
-  if (!captures || captures.length === 0) {
-    return [];
+  const byCapture = new Map();
+  for (const row of imagesRows) {
+    if (!byCapture.has(row.capture_id)) byCapture.set(row.capture_id, row);
   }
 
   return captures.map((capture, index) => ({
@@ -99,7 +87,7 @@ async function loadCubesFromSupabase() {
     label: `Cube ${index + 1}`,
     timestampLabel: formatCaptureTimestamp(capture.timestamp),
     stats: { mean: 0.6, min: -0.95, max: 0.99 },
-    bands: bandsFromCaptureRow(capture),
+    bands: bandsFromImagesRow(byCapture.get(capture.id)),
   }));
 }
 

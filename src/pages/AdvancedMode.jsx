@@ -1,4 +1,5 @@
 import CubeUploadPanel from "@/components/advanced/CubeUploadPanel";
+import SupabaseImage from "@/components/advanced/SupabaseImage";
 import { supabase } from "@/lib/supabase";
 import { useSpectralCubes } from "@/state/useSpectralCubes";
 
@@ -68,7 +69,7 @@ function SpectralImagePreview({ visualization, bands, empty }) {
   if (visualization === "NDVI" && bands.ndvi) {
     return (
       <div className="flex max-w-full flex-col items-center gap-3 sm:flex-row sm:items-stretch sm:justify-center sm:gap-4">
-        <img
+        <SupabaseImage
           src={bands.ndvi}
           alt="Mapa NDVI"
           className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
@@ -100,7 +101,7 @@ function SpectralImagePreview({ visualization, bands, empty }) {
       <div className="grid w-full max-w-3xl grid-cols-3 gap-2">
         <div className="flex flex-col items-center gap-1">
           <span className="text-[10px] text-slate-400">R</span>
-          <img
+          <SupabaseImage
             src={bands.r}
             alt="Canal R"
             className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
@@ -108,7 +109,7 @@ function SpectralImagePreview({ visualization, bands, empty }) {
         </div>
         <div className="flex flex-col items-center gap-1">
           <span className="text-[10px] text-slate-400">G</span>
-          <img
+          <SupabaseImage
             src={bands.g}
             alt="Canal G"
             className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
@@ -116,7 +117,7 @@ function SpectralImagePreview({ visualization, bands, empty }) {
         </div>
         <div className="flex flex-col items-center gap-1">
           <span className="text-[10px] text-slate-400">B</span>
-          <img
+          <SupabaseImage
             src={bands.b}
             alt="Canal B"
             className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
@@ -129,7 +130,7 @@ function SpectralImagePreview({ visualization, bands, empty }) {
   const bandKey = BAND_BY_VIZ[visualization];
   if (bandKey && bands[bandKey]) {
     return (
-      <img
+      <SupabaseImage
         src={bands[bandKey]}
         alt={`Canal ${visualization}`}
         className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
@@ -144,11 +145,11 @@ function SpectralImagePreview({ visualization, bands, empty }) {
           Índice <span className="font-semibold text-white">{visualization}</span>
           : el cálculo espectral aún no está aplicado.{" "}
           {visualization === "NDVI"
-            ? "Sube R + NIR en el panel superior (modo Solo NDVI) o revisa que este cube tenga imagen NDVI guardada."
+            ? "Sube R + NIR arriba o revisa que este cube tenga NDVI guardado en Supabase."
             : "Puedes usar NIR como referencia visual."}
         </p>
         {bands.nir ? (
-          <img
+          <SupabaseImage
             src={bands.nir}
             alt="NIR referencia"
             className="max-h-[min(50vh,24rem)] max-w-full rounded-lg object-contain opacity-90"
