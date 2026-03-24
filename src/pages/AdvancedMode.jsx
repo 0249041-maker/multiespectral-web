@@ -1,3 +1,5 @@
+import CubeUploadPanel from "@/components/advanced/CubeUploadPanel";
+import { supabase } from "@/lib/supabase";
 import { useSpectralCubes } from "@/state/useSpectralCubes";
 
 const VISUALIZATIONS = [
@@ -23,16 +25,163 @@ const VISUALIZATIONS = [
   "NIR",
 ];
 
+const BAND_BY_VIZ = {
+  RED: "r",
+  GREEN: "g",
+  BLUE: "b",
+  RE: "re",
+  NIR: "nir",
+};
+
+const INDEX_LABELS = new Set([
+  "NDRE",
+  "NDRI",
+  "NDGI",
+  "CI_re",
+  "SIPI",
+  "VARI",
+  "NDVI",
+  "GNDVI",
+  "MSR",
+  "Cl_green",
+  "MTCI",
+  "EVI",
+  "ARVI",
+  "Cl Red",
+]);
+
+function SpectralImagePreview({ visualization, bands, empty }) {
+  if (empty || !bands) {
+    if (empty) {
+      return (
+        <p className="max-w-sm text-center text-sm text-slate-400">
+          Sube imágenes arriba (mínimo R y NIR) para ver la visualización. Usa
+          el desplegable para elegir NDVI u otro índice cuando tengas un cube.
+        </p>
+      );
+    }
+    return (
+      <div className="h-[clamp(14rem,20vw,28rem)] w-[clamp(14rem,20vw,28rem)] rounded-full bg-gradient-to-tr from-slate-700 via-slate-100 to-slate-800" />
+    );
+  }
+
+  if (visualization === "NDVI" && bands.ndvi) {
+    return (
+      <div className="flex max-w-full flex-col items-center gap-3 sm:flex-row sm:items-stretch sm:justify-center sm:gap-4">
+        <img
+          src={bands.ndvi}
+          alt="Mapa NDVI"
+          className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
+        />
+        <div
+          className="flex h-[min(50vh,24rem)] min-h-[180px] flex-row items-stretch justify-center gap-2 sm:h-auto sm:min-h-[min(50vh,24rem)] sm:w-14 sm:flex-col sm:items-center sm:py-1"
+          aria-hidden
+        >
+          <span className="self-center text-[10px] font-medium text-slate-300 sm:order-1">
+            1.0
+          </span>
+          <div
+            className="mx-auto w-full max-w-[12rem] flex-1 rounded border border-white/25 sm:order-2 sm:max-w-none sm:flex-1 sm:self-stretch"
+            style={{
+              background:
+                "linear-gradient(to top, rgb(139,0,0) 0%, rgb(255,200,80) 50%, rgb(0,109,44) 100%)",
+            }}
+          />
+          <span className="self-center text-[10px] font-medium text-slate-300 sm:order-3">
+            -1.0
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (visualization === "RGB" && bands.r && bands.g && bands.b) {
+    return (
+      <div className="grid w-full max-w-3xl grid-cols-3 gap-2">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] text-slate-400">R</span>
+          <img
+            src={bands.r}
+            alt="Canal R"
+            className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
+          />
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] text-slate-400">G</span>
+          <img
+            src={bands.g}
+            alt="Canal G"
+            className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
+          />
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] text-slate-400">B</span>
+          <img
+            src={bands.b}
+            alt="Canal B"
+            className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const bandKey = BAND_BY_VIZ[visualization];
+  if (bandKey && bands[bandKey]) {
+    return (
+      <img
+        src={bands[bandKey]}
+        alt={`Canal ${visualization}`}
+        className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
+      />
+    );
+  }
+
+  if (INDEX_LABELS.has(visualization)) {
+    return (
+      <div className="flex max-w-md flex-col items-center gap-3 text-center">
+        <p className="text-sm text-slate-300">
+          Índice <span className="font-semibold text-white">{visualization}</span>
+          : el cálculo espectral aún no está aplicado.{" "}
+          {visualization === "NDVI"
+            ? "Sube R + NIR en el panel superior (modo Solo NDVI) o revisa que este cube tenga imagen NDVI guardada."
+            : "Puedes usar NIR como referencia visual."}
+        </p>
+        {bands.nir ? (
+          <img
+            src={bands.nir}
+            alt="NIR referencia"
+            className="max-h-[min(50vh,24rem)] max-w-full rounded-lg object-contain opacity-90"
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[clamp(14rem,20vw,28rem)] w-[clamp(14rem,20vw,28rem)] rounded-full bg-gradient-to-tr from-slate-700 via-slate-100 to-slate-800" />
+  );
+}
+
 export default function AdvancedMode() {
   const {
     cubes,
+    selectedCube,
     selectedCubeId,
     setSelectedCubeId,
     selectedVisualization,
     setSelectedVisualization,
     loading,
     error,
+    addCubeFromUpload,
+    clearLocalCubes,
   } = useSpectralCubes();
+
+  const handleCubeAccepted = async (payload) => {
+    return addCubeFromUpload({ files: payload.files });
+  };
+
+  const statsCube = selectedCube ?? cubes[0];
 
   return (
     <section
@@ -50,23 +199,56 @@ export default function AdvancedMode() {
         </div>
       </div>
 
+      {!supabase && (
+        <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+          <p className="font-semibold text-amber-900">
+            Supabase no configurado
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            Para que <strong>cualquier persona</strong> vea los cubes desde
+            cualquier computadora, configura Supabase: crea un archivo{" "}
+            <code className="rounded bg-amber-100 px-1">.env</code> con{" "}
+            <code className="rounded bg-amber-100 px-1">VITE_SUPABASE_URL</code>{" "}
+            y{" "}
+            <code className="rounded bg-amber-100 px-1">VITE_SUPABASE_ANON_KEY</code>
+            , ejecuta{" "}
+            <code className="rounded bg-amber-100 px-1">
+              supabase/configurar_acceso_publico.sql
+            </code>{" "}
+            en el SQL Editor de Supabase, y reinicia la app.
+          </p>
+          <p className="mt-2 text-xs text-amber-700">
+            Sin Supabase, los cubes solo se guardan en este navegador y no se
+            comparten.
+          </p>
+        </div>
+      )}
+
+      <CubeUploadPanel onCubeAccepted={handleCubeAccepted} disabled={loading} />
+
       {loading && (
         <p className="text-sm text-slate-500">
           Cargando cubes multiespectrales…
         </p>
       )}
-      {error && (
-        <p className="text-sm text-red-600">
-          Ocurrió un error al cargar los cubes: {error}
+      {error && !loading && (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          No se pudieron cargar cubes desde Supabase ({error}). La subida de
+          imágenes sigue funcionando.
         </p>
       )}
 
-      {!loading && !error && (
+      {!loading && (
         <div className="grid gap-4 md:grid-cols-[220px,1fr]">
           <aside className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Spectral cubes
             </p>
+            {cubes.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                Sin cubes. Sube imágenes arriba para comenzar.
+              </p>
+            ) : (
             <div className="space-y-1">
               {cubes.map((cube) => (
                 <button
@@ -83,9 +265,34 @@ export default function AdvancedMode() {
                   <span className="text-[11px] text-slate-500">
                     {cube.timestampLabel}
                   </span>
+                  {cube.bands?.ndvi ? (
+                    <span className="mt-0.5 text-[10px] text-emerald-600">
+                      NDVI + R / NIR
+                    </span>
+                  ) : cube.bands?.r &&
+                    cube.bands?.g &&
+                    cube.bands?.b &&
+                    cube.bands?.re &&
+                    cube.bands?.nir ? (
+                    <span className="mt-0.5 text-[10px] text-emerald-600">
+                      5 bandas cargadas
+                    </span>
+                  ) : cube.bands ? (
+                    <span className="mt-0.5 text-[10px] text-amber-700">
+                      Banda(s) parcial(es)
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
+            )}
+            <button
+              type="button"
+              onClick={clearLocalCubes}
+              className="mt-2 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            >
+              Borrar cubes guardados en este navegador
+            </button>
           </aside>
 
           <div className="space-y-4">
@@ -101,7 +308,8 @@ export default function AdvancedMode() {
               <select
                 value={selectedVisualization}
                 onChange={(e) => setSelectedVisualization(e.target.value)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm"
+                disabled={cubes.length === 0}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm disabled:opacity-50"
               >
                 {VISUALIZATIONS.map((v) => (
                   <option key={v} value={v}>
@@ -112,7 +320,7 @@ export default function AdvancedMode() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
-              <div className="flex flex-col rounded-xl border border-slate-200 bg-slate-950/5 p-4">
+              <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-slate-950/5 p-4">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Vista por imagen
@@ -121,9 +329,14 @@ export default function AdvancedMode() {
                     {selectedVisualization}
                   </span>
                 </div>
-                <div className="mt-4 flex flex-1 items-center justify-center rounded-xl bg-slate-900 p-6">
-                  <div className="h-56 w-56 rounded-full bg-gradient-to-tr from-slate-700 via-slate-100 to-slate-800" />
+                <div className="mt-4 flex min-h-[min(50vh,20rem)] flex-1 items-center justify-center rounded-xl bg-slate-900 p-4 sm:p-6">
+                  <SpectralImagePreview
+                    visualization={selectedVisualization}
+                    bands={statsCube?.bands ?? null}
+                    empty={cubes.length === 0}
+                  />
                 </div>
+                {cubes.length > 0 && (
                 <div className="mt-4 flex items-center gap-2">
                   <span className="text-xs text-slate-500">Escala</span>
                   <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-red-500 via-yellow-300 to-emerald-500" />
@@ -131,6 +344,7 @@ export default function AdvancedMode() {
                   <span className="text-[11px] text-slate-500">0.0</span>
                   <span className="text-[11px] text-slate-500">+1.0</span>
                 </div>
+                )}
               </div>
 
               <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
@@ -139,21 +353,35 @@ export default function AdvancedMode() {
                     Resumen del índice
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
-                    Valores simulados para vista preliminar de diseño.
+                    {statsCube?.bands?.ndvi
+                      ? "Estadísticas calculadas en el cliente al generar el NDVI."
+                      : "Valores simulados salvo que el cube tenga NDVI calculado."}
                   </p>
                 </div>
                 <dl className="space-y-2 text-xs text-slate-600">
                   <div className="flex justify-between">
                     <dt>Media</dt>
-                    <dd>{cubes[0]?.stats.mean.toFixed(2) ?? "0.00"}</dd>
+                    <dd>
+                      {statsCube?.stats?.mean != null
+                        ? statsCube.stats.mean.toFixed(2)
+                        : "—"}
+                    </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt>Mínimo</dt>
-                    <dd>{cubes[0]?.stats.min.toFixed(2) ?? "-1.00"}</dd>
+                    <dd>
+                      {statsCube?.stats?.min != null
+                        ? statsCube.stats.min.toFixed(2)
+                        : "—"}
+                    </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt>Máximo</dt>
-                    <dd>{cubes[0]?.stats.max.toFixed(2) ?? "1.00"}</dd>
+                    <dd>
+                      {statsCube?.stats?.max != null
+                        ? statsCube.stats.max.toFixed(2)
+                        : "—"}
+                    </dd>
                   </div>
                 </dl>
               </div>
@@ -164,4 +392,3 @@ export default function AdvancedMode() {
     </section>
   );
 }
-

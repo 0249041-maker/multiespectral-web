@@ -82,7 +82,7 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           title="Tiempo promedio de maduración"
           subtitle="Días por fruto"
@@ -102,8 +102,13 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
         />
         <StatCard
           title="Personas para recolectar"
-          subtitle="Hoy / Mañana"
-          value={`${todayWorkers} / ${tomorrowWorkers} personas`}
+          subtitle="Hoy"
+          value={`${todayWorkers} personas`}
+        />
+        <StatCard
+          title="Personas para recolectar"
+          subtitle="Mañana"
+          value={`${tomorrowWorkers} personas`}
         />
       </div>
 

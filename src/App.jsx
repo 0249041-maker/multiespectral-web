@@ -8,7 +8,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 md:px-6">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-xl bg-emerald-500" />
             <div>
@@ -26,7 +26,7 @@ function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-6 space-y-6">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 space-y-6 md:px-6">
         <DashboardBasic
           onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
           advancedVisible={showAdvanced}
