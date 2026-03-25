@@ -1,3 +1,4 @@
+import { useStrawberryDetection } from "@/context/StrawberryDetectionContext";
 import { useDashboardData } from "@/state/useDashboardData";
 
 function StatCard({ title, subtitle, value, detail }) {
@@ -8,7 +9,9 @@ function StatCard({ title, subtitle, value, detail }) {
       </p>
       <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
       <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
-      {detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}
+      {detail != null && detail !== false && (
+        <p className="mt-1 text-xs text-slate-500">{detail}</p>
+      )}
     </div>
   );
 }
@@ -31,6 +34,7 @@ function RecommendationCard({ title, items }) {
 
 export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
   const { data, loading, error } = useDashboardData();
+  const { fruitCount, lastError, lastRunAt } = useStrawberryDetection();
 
   if (loading) {
     return (
@@ -82,7 +86,21 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <StatCard
+          title="Frutos detectados (YOLO)"
+          subtitle="Conteo en imagen RGB"
+          value={fruitCount != null ? `${fruitCount} frutos` : "—"}
+          detail={
+            lastError ? (
+              <span className="text-red-600">{lastError}</span>
+            ) : lastRunAt ? (
+              `Última prueba: ${new Date(lastRunAt).toLocaleString("es-ES")}`
+            ) : (
+              "Sin pruebas aún (panel de detección abajo)."
+            )
+          }
+        />
         <StatCard
           title="Tiempo promedio de maduración"
           subtitle="Días por fruto"

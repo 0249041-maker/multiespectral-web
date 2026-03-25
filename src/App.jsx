@@ -1,11 +1,17 @@
+import { StrawberryDetectionProvider } from "./context/StrawberryDetectionContext.jsx";
 import DashboardBasic from "./pages/DashboardBasic.jsx";
 import AdvancedMode from "./pages/AdvancedMode.jsx";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
+
+const StrawberryDetectionLab = lazy(() =>
+  import("./components/StrawberryDetectionLab.jsx")
+);
 
 function App() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
+    <StrawberryDetectionProvider>
     <div className="min-h-screen bg-slate-50">
       <header className="border-b bg-white">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 md:px-6">
@@ -31,9 +37,19 @@ function App() {
           onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
           advancedVisible={showAdvanced}
         />
+        <Suspense
+          fallback={
+            <p className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
+              Cargando panel de detección…
+            </p>
+          }
+        >
+          <StrawberryDetectionLab />
+        </Suspense>
         {showAdvanced && <AdvancedMode />}
       </main>
     </div>
+    </StrawberryDetectionProvider>
   );
 }
 
