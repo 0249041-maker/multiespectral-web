@@ -68,6 +68,26 @@ CREATE POLICY "spectral_storage_anon_insert"
   TO anon
   WITH CHECK (bucket_id = 'spectral-captures');
 
+-- Permiso para BORRAR cubes desde la app (anon). Cualquiera con la URL puede borrar;
+-- en producción sería mejor usar usuarios autenticados.
+DROP POLICY IF EXISTS "captures_anon_delete" ON public.captures;
+CREATE POLICY "captures_anon_delete"
+  ON public.captures FOR DELETE
+  TO anon
+  USING (true);
+
+DROP POLICY IF EXISTS "capture_images_anon_delete" ON public.capture_images;
+CREATE POLICY "capture_images_anon_delete"
+  ON public.capture_images FOR DELETE
+  TO anon
+  USING (true);
+
+DROP POLICY IF EXISTS "spectral_storage_anon_delete" ON storage.objects;
+CREATE POLICY "spectral_storage_anon_delete"
+  ON storage.objects FOR DELETE
+  TO anon
+  USING (bucket_id = 'spectral-captures');
+
 -- Opcional: columna img_ndvi si no existe
 ALTER TABLE public.capture_images
 ADD COLUMN IF NOT EXISTS img_ndvi text;

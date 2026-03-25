@@ -3,12 +3,15 @@ import { supabase } from "@/lib/supabase";
 import {
   clearAllCubesFromIndexedDB,
   loadAllCubesFromIndexedDB,
+  removeCubeFromIndexedDB,
   saveCubeToIndexedDB,
 } from "@/lib/cubeIndexedDB";
 import { computeNdviPngFromFiles } from "@/lib/ndvi";
 import {
+  deleteSpectralCube,
   localPartialBandUrls,
   persistSpectralCube,
+  revokeSpectralCubeUrls,
 } from "@/lib/spectralStorage";
 
 function formatCaptureTimestamp(ts) {
@@ -124,6 +127,7 @@ export function useSpectralCubes() {
   const [cubes, setCubes] = useState([]);
   const [selectedCubeId, setSelectedCubeId] = useState(null);
   const [selectedVisualization, setSelectedVisualization] = useState("NDVI");
+  const [deletePendingId, setDeletePendingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,6 +257,45 @@ export function useSpectralCubes() {
     setSelectedCubeId(merged[0]?.id ?? null);
   }, []);
 
+  /**
+   * Borra el cube en Supabase (tablas + Storage), en IndexedDB y lo quita de la UI.
+   */
+  const deleteCubeById = useCallback(async (id) => {
+    if (!id) return;
+    setDeletePendingId(id);
+    try {
+      if (supabase) {
+        try {
+          await deleteSpectralCube(id);
+        } catch (e) {
+          const msg =
+            e instanceof Error ? e.message : "No se pudo borrar en Supabase";
+          setError(msg);
+          return;
+        }
+      }
+
+      try {
+        await removeCubeFromIndexedDB(id);
+      } catch (e) {
+        console.warn("IndexedDB al borrar cube:", e);
+      }
+
+      setCubes((prev) => {
+        const victim = prev.find((c) => c.id === id);
+        if (victim?.bands) revokeSpectralCubeUrls(victim.bands);
+        const next = prev.filter((c) => c.id !== id);
+        setSelectedCubeId((sel) =>
+          sel === id ? next[0]?.id ?? null : sel
+        );
+        return next;
+      });
+      setError(null);
+    } finally {
+      setDeletePendingId(null);
+    }
+  }, []);
+
   const selectedCube =
     cubes.find((c) => c.id === selectedCubeId) ?? cubes[0] ?? null;
 
@@ -267,5 +310,7 @@ export function useSpectralCubes() {
     error,
     addCubeFromUpload,
     clearLocalCubes,
+    deleteCubeById,
+    deletePendingId,
   };
 }

@@ -176,6 +176,8 @@ export default function AdvancedMode() {
     error,
     addCubeFromUpload,
     clearLocalCubes,
+    deleteCubeById,
+    deletePendingId,
   } = useSpectralCubes();
 
   const handleCubeAccepted = async (payload) => {
@@ -270,38 +272,58 @@ export default function AdvancedMode() {
             ) : (
             <div className="space-y-1">
               {cubes.map((cube) => (
-                <button
+                <div
                   key={cube.id}
-                  type="button"
-                  onClick={() => setSelectedCubeId(cube.id)}
-                  className={`flex w-full flex-col rounded-lg border px-3 py-2 text-left text-xs ${
-                    cube.id === selectedCubeId
-                      ? "border-emerald-400 bg-emerald-50 text-emerald-900"
-                      : "border-slate-200 bg-slate-50 text-slate-700 hover:border-emerald-200"
-                  }`}
+                  className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5"
                 >
-                  <span className="font-semibold">{cube.label}</span>
-                  <span className="text-[11px] text-slate-500">
-                    {cube.timestampLabel}
-                  </span>
-                  {cube.bands?.ndvi ? (
-                    <span className="mt-0.5 text-[10px] text-emerald-600">
-                      NDVI + R / NIR
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCubeId(cube.id)}
+                    className={`flex min-w-0 flex-1 flex-col rounded-md border border-transparent px-2 py-2 text-left text-xs ${
+                      cube.id === selectedCubeId
+                        ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                        : "text-slate-700 hover:border-emerald-200 hover:bg-white"
+                    }`}
+                  >
+                    <span className="font-semibold">{cube.label}</span>
+                    <span className="text-[11px] text-slate-500">
+                      {cube.timestampLabel}
                     </span>
-                  ) : cube.bands?.r &&
-                    cube.bands?.g &&
-                    cube.bands?.b &&
-                    cube.bands?.re &&
-                    cube.bands?.nir ? (
-                    <span className="mt-0.5 text-[10px] text-emerald-600">
-                      5 bandas cargadas
-                    </span>
-                  ) : cube.bands ? (
-                    <span className="mt-0.5 text-[10px] text-amber-700">
-                      Banda(s) parcial(es)
-                    </span>
-                  ) : null}
-                </button>
+                    {cube.bands?.ndvi ? (
+                      <span className="mt-0.5 text-[10px] text-emerald-600">
+                        NDVI + R / NIR
+                      </span>
+                    ) : cube.bands?.r &&
+                      cube.bands?.g &&
+                      cube.bands?.b &&
+                      cube.bands?.re &&
+                      cube.bands?.nir ? (
+                      <span className="mt-0.5 text-[10px] text-emerald-600">
+                        5 bandas cargadas
+                      </span>
+                    ) : cube.bands ? (
+                      <span className="mt-0.5 text-[10px] text-amber-700">
+                        Banda(s) parcial(es)
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deletePendingId === cube.id}
+                    aria-label={`Borrar ${cube.label}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const msg = supabase
+                        ? "¿Borrar este cube? Se eliminará de la base de datos, del almacenamiento de imágenes y de este navegador."
+                        : "¿Borrar este cube solo de este navegador? (Sin Supabase no hay copia en servidor.)";
+                      if (!window.confirm(msg)) return;
+                      void deleteCubeById(cube.id);
+                    }}
+                    className="shrink-0 self-stretch rounded-md border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {deletePendingId === cube.id ? "…" : "Borrar"}
+                  </button>
+                </div>
               ))}
             </div>
             )}

@@ -90,3 +90,62 @@ export function localPartialBandUrls(files, ndviBlob = null) {
   if (ndviBlob) out.ndvi = URL.createObjectURL(ndviBlob);
   return out;
 }
+
+/** Revoca URLs blob: de las bandas de un cube (evita fugas de memoria). */
+export function revokeSpectralCubeUrls(bands) {
+  if (!bands || typeof bands !== "object") return;
+  for (const url of Object.values(bands)) {
+    if (typeof url === "string" && url.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+/**
+ * Borra un cube en Supabase: filas en capture_images y captures, y archivos
+ * en Storage bajo la carpeta del captureId.
+ */
+export async function deleteSpectralCube(captureId) {
+  if (!supabase) {
+    throw new Error("Supabase no está configurado");
+  }
+  if (!captureId || typeof captureId !== "string") {
+    throw new Error("Id de capture no válido");
+  }
+
+  const { error: imgErr } = await supabase
+    .from("capture_images")
+    .delete()
+    .eq("capture_id", captureId);
+  if (imgErr) throw imgErr;
+
+  const { error: capErr } = await supabase
+    .from("captures")
+    .delete()
+    .eq("id", captureId);
+  if (capErr) throw capErr;
+
+  const { data: listed, error: listErr } = await supabase.storage
+    .from(SPECTRAL_BUCKET)
+    .list(captureId);
+
+  if (listErr) {
+    console.warn("Storage list al borrar cube:", listErr.message);
+    return;
+  }
+
+  const paths = (listed ?? [])
+    .filter((f) => f.id)
+    .map((f) => `${captureId}/${f.name}`);
+
+  if (paths.length === 0) return;
+
+  const { error: rmErr } = await supabase.storage
+    .from(SPECTRAL_BUCKET)
+    .remove(paths);
+  if (rmErr) console.warn("Storage remove al borrar cube:", rmErr.message);
+}
