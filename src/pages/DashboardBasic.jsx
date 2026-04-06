@@ -33,7 +33,7 @@ function RecommendationCard({ title, items }) {
 }
 
 export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
-  const { data, loading, error } = useDashboardData();
+  const { data, loading, error, warning } = useDashboardData();
   const { fruitCount, lastError, lastRunAt } = useStrawberryDetection();
 
   if (loading) {
@@ -44,11 +44,21 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <section aria-label="Dashboard básico">
         <p className="text-sm text-red-600">
           Ocurrió un error al cargar los datos: {error}
+        </p>
+      </section>
+    );
+  }
+
+  if (!data) {
+    return (
+      <section aria-label="Dashboard básico">
+        <p className="text-sm text-red-600">
+          No hay datos para mostrar. Revisa la consola o la conexión.
         </p>
       </section>
     );
@@ -68,6 +78,22 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
 
   return (
     <section aria-label="Dashboard básico" className="space-y-4">
+      {warning && (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          <p className="font-medium text-amber-900">Aviso</p>
+          <p className="mt-1 text-amber-800">{warning}</p>
+          <p className="mt-2 text-xs text-amber-800/90">
+            Para datos reales, crea la tabla{" "}
+            <code className="rounded bg-amber-100 px-1">fruit_counts</code> en
+            Supabase y políticas de lectura para{" "}
+            <code className="rounded bg-amber-100 px-1">anon</code>, o revisa
+            URL/clave en Vercel.
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">

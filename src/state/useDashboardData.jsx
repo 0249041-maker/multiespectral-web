@@ -25,22 +25,29 @@ function buildMockFromSupabaseLikeData() {
   };
 }
 
+/**
+ * @returns {{ data: ReturnType<typeof buildMockFromSupabaseLikeData>, warning: string | null }}
+ */
 async function loadFromSupabase() {
   if (!supabase) {
-    return buildMockFromSupabaseLikeData();
+    return { data: buildMockFromSupabaseLikeData(), warning: null };
   }
 
-  // 1) Leemos todos los conteos de frutos.
   const { data: fruitCounts, error } = await supabase
     .from("fruit_counts")
     .select("ripe_fruits, medium_fruits, unripe_fruits");
 
   if (error) {
-    throw error;
+    const detail = error.message || String(error);
+    console.warn("Dashboard: no se pudo leer fruit_counts:", detail);
+    return {
+      data: buildMockFromSupabaseLikeData(),
+      warning: `No hubo conexión correcta con la tabla de datos (${detail}). Se muestran valores de ejemplo.`,
+    };
   }
 
   if (!fruitCounts || fruitCounts.length === 0) {
-    return buildMockFromSupabaseLikeData();
+    return { data: buildMockFromSupabaseLikeData(), warning: null };
   }
 
   const totals = fruitCounts.reduce(
@@ -65,25 +72,28 @@ async function loadFromSupabase() {
   const tomorrowWorkers = Math.max(1, Math.round(tomorrowRipe / 60));
 
   return {
-    avgMaturationDays: 14.8,
-    todayPrediction: {
-      fruits: todayRipe,
-      percentage: todayPercentage,
+    data: {
+      avgMaturationDays: 14.8,
+      todayPrediction: {
+        fruits: todayRipe,
+        percentage: todayPercentage,
+      },
+      tomorrowPrediction: {
+        fruits: tomorrowRipe,
+        percentage: tomorrowPercentage,
+      },
+      todayWorkers,
+      tomorrowWorkers,
+      ndviAverage: 0.95,
+      ndviStatus: "Bueno",
+      recommendationTitle: "Plan de cosecha basado en datos reales.",
+      recommendationItems: [
+        "Asignar cuadrillas según frutos maduros estimados.",
+        "Revisar bloques con mayor porcentaje de madurez.",
+        "Ajustar personal para mañana según proyección.",
+      ],
     },
-    tomorrowPrediction: {
-      fruits: tomorrowRipe,
-      percentage: tomorrowPercentage,
-    },
-    todayWorkers,
-    tomorrowWorkers,
-    ndviAverage: 0.95,
-    ndviStatus: "Bueno",
-    recommendationTitle: "Plan de cosecha basado en datos reales.",
-    recommendationItems: [
-      "Asignar cuadrillas según frutos maduros estimados.",
-      "Revisar bloques con mayor porcentaje de madurez.",
-      "Ajustar personal para mañana según proyección.",
-    ],
+    warning: null,
   };
 }
 
@@ -92,6 +102,7 @@ export function useDashboardData() {
     loading: true,
     error: null,
     data: null,
+    warning: null,
   });
 
   useEffect(() => {
@@ -99,16 +110,19 @@ export function useDashboardData() {
 
     async function load() {
       try {
-        const data = await loadFromSupabase();
+        const { data, warning } = await loadFromSupabase();
         if (!cancelled) {
-          setState({ loading: false, error: null, data });
+          setState({ loading: false, error: null, data, warning });
         }
       } catch (e) {
         if (!cancelled) {
+          const msg = e instanceof Error ? e.message : "Error desconocido";
+          console.warn("Dashboard: error inesperado:", e);
           setState({
             loading: false,
-            error: e instanceof Error ? e.message : "Error desconocido",
-            data: null,
+            error: null,
+            data: buildMockFromSupabaseLikeData(),
+            warning: `Error al cargar (${msg}). Se muestran valores de ejemplo.`,
           });
         }
       }
