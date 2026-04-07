@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { SPECTRAL_BUCKET } from "@/lib/spectralStorage";
 import { supabase } from "@/lib/supabase";
 import {
   normalizeSupabaseStorageImageUrl,
@@ -123,7 +124,7 @@ export default function SupabaseImage({ src, alt, className }) {
         <p className="mt-2 max-w-md text-center text-xs text-red-300">
           No se pudo cargar la imagen. En Supabase: Storage → bucket correcto
           (p. ej.{" "}
-          <code className="rounded bg-slate-800 px-1">spectral-captures</code>)
+          <code className="rounded bg-slate-800 px-1">{SPECTRAL_BUCKET}</code>)
           público o con política{" "}
           <code className="rounded bg-slate-800 px-1 text-[10px]">SELECT</code>{" "}
           para <code className="rounded bg-slate-800 px-1">anon</code>. Ejecuta{" "}

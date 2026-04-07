@@ -208,8 +208,13 @@ export default function AdvancedMode() {
             Cubes en la nube (Supabase)
           </p>
           <p className="mt-1 text-sm text-emerald-800">
-            Las imágenes se suben al bucket{" "}
-            <code className="rounded bg-white px-1 text-xs">spectral-captures</code>{" "}
+            Las imágenes se suben al bucket de Storage{" "}
+            <code className="rounded bg-white px-1 text-xs">
+              {import.meta.env.VITE_SUPABASE_SPECTRAL_BUCKET || "capture_image"}
+            </code>{" "}
+            (tabla distinta:{" "}
+            <code className="rounded bg-white px-1 text-xs">capture_images</code>
+            ).{" "}
             y las URLs se guardan en{" "}
             <code className="rounded bg-white px-1 text-xs">captures</code> /{" "}
             <code className="rounded bg-white px-1 text-xs">capture_images</code>.
@@ -243,7 +248,9 @@ export default function AdvancedMode() {
               <code className="rounded bg-amber-100 px-1">
                 VITE_SUPABASE_ANON_KEY
               </code>{" "}
-              = la anon key (pública)
+              = la anon key (pública). El nombre debe ser exactamente ese, con{" "}
+              <strong>KEY</strong> al final (no <code>VITE_SUPABASE_ANON_KE</code>
+              ).
             </li>
           </ul>
           <p className="mt-2 text-sm text-amber-800">

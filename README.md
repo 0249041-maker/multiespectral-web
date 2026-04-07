@@ -11,6 +11,7 @@ Para que **cualquier persona** que abra la página vea todos los cubes y que las
    VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
    VITE_SUPABASE_ANON_KEY=tu_anon_key
    ```
+   El nombre de la segunda variable debe ser exactamente **`VITE_SUPABASE_ANON_KEY`** (termina en **KEY**). Opcional: `VITE_SUPABASE_SPECTRAL_BUCKET=capture_image` si tu bucket en Storage tiene otro nombre.
 
 2. **Ejecuta el script de acceso público** en Supabase → SQL Editor:
    - Abre `supabase/configurar_acceso_publico.sql`
@@ -31,7 +32,7 @@ El `.env` de tu computadora **no** llega a Vercel. Si no configuras variables ah
    | Nombre | Valor |
    |--------|--------|
    | `VITE_SUPABASE_URL` | `https://xxxxx.supabase.co` |
-   | `VITE_SUPABASE_ANON_KEY` | tu anon key de Supabase |
+   | `VITE_SUPABASE_ANON_KEY` | tu anon key (nombre exacto, con **KEY** al final) |
 
 3. Marca al menos **Production** (y Preview si quieres).
 4. Ve a **Deployments** → en el último deploy, menú **⋯** → **Redeploy** (sin usar caché si quieres forzar).

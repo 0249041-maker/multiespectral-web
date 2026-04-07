@@ -4,11 +4,15 @@
 -- Pasos:
 -- 1. Supabase Dashboard → SQL Editor → New query
 -- 2. Pega todo este archivo y ejecuta (Run)
--- 3. Asegúrate de tener .env con VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
+-- 3. En .env / Vercel usa VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY (termina en KEY)
 
 -- ============================================
--- 0. Crear bucket de Storage (si no existe)
+-- 0. Buckets de Storage (capture_image = actual por defecto en la app; spectral-captures = compatibilidad)
 -- ============================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('capture_image', 'capture_image', true, 52428800, ARRAY['image/png', 'image/jpeg', 'image/webp']::text[])
+ON CONFLICT (id) DO UPDATE SET public = true;
+
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('spectral-captures', 'spectral-captures', true, 52428800, ARRAY['image/png', 'image/jpeg', 'image/webp']::text[])
 ON CONFLICT (id) DO UPDATE SET public = true;
@@ -48,29 +52,21 @@ CREATE POLICY "capture_images_anon_insert"
   WITH CHECK (true);
 
 -- ============================================
--- 3. Storage: bucket spectral-captures público
+-- 3. Storage: políticas para bucket capture_image (y spectral-captures si tenías datos antiguos)
 -- ============================================
--- Primero crea el bucket en Dashboard → Storage → New bucket
--- Nombre: spectral-captures
--- Public bucket: SÍ (o ejecuta las políticas de abajo)
 
--- Permiso para LEER imágenes (cualquiera puede verlas).
--- Necesario también para URLs firmadas (createSignedUrl) desde el cliente con anon.
 DROP POLICY IF EXISTS "spectral_storage_anon_select" ON storage.objects;
 CREATE POLICY "spectral_storage_anon_select"
   ON storage.objects FOR SELECT
   TO anon
-  USING (bucket_id = 'spectral-captures');
+  USING (bucket_id IN ('capture_image', 'spectral-captures'));
 
--- Permiso para SUBIR imágenes (cualquiera puede subir al crear cubes)
 DROP POLICY IF EXISTS "spectral_storage_anon_insert" ON storage.objects;
 CREATE POLICY "spectral_storage_anon_insert"
   ON storage.objects FOR INSERT
   TO anon
-  WITH CHECK (bucket_id = 'spectral-captures');
+  WITH CHECK (bucket_id IN ('capture_image', 'spectral-captures'));
 
--- Permiso para BORRAR cubes desde la app (anon). Cualquiera con la URL puede borrar;
--- en producción sería mejor usar usuarios autenticados.
 DROP POLICY IF EXISTS "captures_anon_delete" ON public.captures;
 CREATE POLICY "captures_anon_delete"
   ON public.captures FOR DELETE
@@ -87,7 +83,7 @@ DROP POLICY IF EXISTS "spectral_storage_anon_delete" ON storage.objects;
 CREATE POLICY "spectral_storage_anon_delete"
   ON storage.objects FOR DELETE
   TO anon
-  USING (bucket_id = 'spectral-captures');
+  USING (bucket_id IN ('capture_image', 'spectral-captures'));
 
 -- Opcional: columna img_ndvi si no existe
 ALTER TABLE public.capture_images

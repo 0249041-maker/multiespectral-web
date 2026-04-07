@@ -1,7 +1,8 @@
 import { supabase } from "@/lib/supabase";
 
+/** Nombre del bucket en Supabase Storage (no confundir con la tabla `capture_images`). */
 export const SPECTRAL_BUCKET =
-  import.meta.env.VITE_SUPABASE_SPECTRAL_BUCKET || "spectral-captures";
+  import.meta.env.VITE_SUPABASE_SPECTRAL_BUCKET || "capture_image";
 
 /** @typedef {{ r: File; g: File; b: File; re: File; nir: File }} SpectralFiles */
 
