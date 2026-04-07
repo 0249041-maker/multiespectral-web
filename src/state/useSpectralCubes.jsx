@@ -121,6 +121,34 @@ async function loadMergedCubes() {
   return { merged, supabaseError };
 }
 
+function applyMergedState(
+  merged,
+  supabaseError,
+  setCubes,
+  setSelectedCubeId,
+  setError,
+  selectIdAfter
+) {
+  setCubes(merged);
+  setSelectedCubeId(() => {
+    if (selectIdAfter && merged.some((c) => c.id === selectIdAfter)) {
+      return selectIdAfter;
+    }
+    return merged[0]?.id ?? null;
+  });
+  if (supabaseError) {
+    if (merged.length > 0) {
+      setError(
+        `${supabaseError} También se muestran cubes guardados en este navegador.`
+      );
+    } else {
+      setError(supabaseError);
+    }
+  } else {
+    setError(null);
+  }
+}
+
 export function useSpectralCubes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -128,6 +156,18 @@ export function useSpectralCubes() {
   const [selectedCubeId, setSelectedCubeId] = useState(null);
   const [selectedVisualization, setSelectedVisualization] = useState("NDVI");
   const [deletePendingId, setDeletePendingId] = useState(null);
+
+  const refreshCubes = useCallback(async (selectIdAfter = null) => {
+    const { merged, supabaseError } = await loadMergedCubes();
+    applyMergedState(
+      merged,
+      supabaseError,
+      setCubes,
+      setSelectedCubeId,
+      setError,
+      selectIdAfter
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,20 +177,14 @@ export function useSpectralCubes() {
 
       if (cancelled) return;
 
-      setCubes(merged);
-      setSelectedCubeId(merged[0]?.id ?? null);
-
-      if (supabaseError) {
-        if (merged.length > 0) {
-          setError(
-            `${supabaseError} También se muestran cubes guardados en este navegador.`
-          );
-        } else {
-          setError(supabaseError);
-        }
-      } else {
-        setError(null);
-      }
+      applyMergedState(
+        merged,
+        supabaseError,
+        setCubes,
+        setSelectedCubeId,
+        setError,
+        null
+      );
 
       setLoading(false);
     }
@@ -165,86 +199,84 @@ export function useSpectralCubes() {
   /**
    * @param {{ files: { r?: File; g?: File; b?: File; re?: File; nir?: File } }} payload
    */
-  const addCubeFromUpload = useCallback(async (payload) => {
-    const files = payload.files;
-    if (!files.r || !files.nir) {
-      throw new Error("Se requieren R y NIR");
-    }
-
-    let bands;
-    let id;
-    let savedToSupabase = false;
-    let persistError = null;
-    let ndviStats = { mean: 0, min: -1, max: 1 };
-
-    let ndviBlob = null;
-    try {
-      const result = await computeNdviPngFromFiles(files.r, files.nir);
-      ndviBlob = result.blob;
-      ndviStats = result.stats;
-    } catch (e) {
-      throw e;
-    }
-
-    if (supabase) {
-      try {
-        const res = await persistSpectralCube(files, ndviBlob);
-        id = res.id;
-        bands = res.bands;
-        savedToSupabase = true;
-      } catch (e) {
-        persistError =
-          e instanceof Error ? e.message : "No se pudo guardar en Supabase";
-        bands = localPartialBandUrls(files, ndviBlob);
-        id =
-          typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `local-${Date.now()}`;
+  const addCubeFromUpload = useCallback(
+    async (payload) => {
+      const files = payload.files;
+      if (!files.r || !files.nir) {
+        throw new Error("Se requieren R y NIR");
       }
-    } else {
-      bands = localPartialBandUrls(files, ndviBlob);
-      id =
+
+      let savedToSupabase = false;
+      let persistError = null;
+      let ndviStats = { mean: 0, min: -1, max: 1 };
+
+      let ndviBlob = null;
+      try {
+        const result = await computeNdviPngFromFiles(files.r, files.nir);
+        ndviBlob = result.blob;
+        ndviStats = result.stats;
+      } catch (e) {
+        throw e;
+      }
+
+      if (supabase) {
+        try {
+          const res = await persistSpectralCube(files, ndviBlob);
+          savedToSupabase = true;
+          await refreshCubes(res.id);
+          setSelectedVisualization("NDVI");
+          return { savedToSupabase: true, persistError: null };
+        } catch (e) {
+          persistError =
+            e instanceof Error ? e.message : "No se pudo guardar en Supabase";
+        }
+      } else {
+        persistError =
+          "Sin variables VITE_SUPABASE_* en el build (p. ej. en Vercel → Environment Variables), solo se guarda en este navegador. Añádelas y haz Redeploy.";
+      }
+
+      const bands = localPartialBandUrls(files, ndviBlob);
+      const id =
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
           : `local-${Date.now()}`;
-      persistError =
-        "Sin variables VITE_SUPABASE_* en el build (p. ej. en Vercel → Environment Variables), solo se guarda en este navegador. Añádelas y haz Redeploy.";
-    }
 
-    const blobsForIdb = {
-      r: files.r,
-      g: files.g,
-      b: files.b,
-      re: files.re,
-      nir: files.nir,
-      ndvi: ndviBlob,
-    };
-
-    setCubes((prev) => {
-      const idx = prev.length + 1;
-      const label = `Cube ${idx}`;
-      const timestampLabel = formatCaptureTimestamp(new Date().toISOString());
-      const cube = {
-        id,
-        label,
-        timestampLabel,
-        stats: ndviStats,
-        bands,
+      const blobsForIdb = {
+        r: files.r,
+        g: files.g,
+        b: files.b,
+        re: files.re,
+        nir: files.nir,
+        ndvi: ndviBlob,
       };
 
-      void saveCubeToIndexedDB(
-        id,
-        { label, timestampLabel, stats: ndviStats },
-        blobsForIdb
-      ).catch((e) => console.warn("IndexedDB:", e));
+      setCubes((prev) => {
+        const idx = prev.length + 1;
+        const label = `Cube ${idx}`;
+        const timestampLabel = formatCaptureTimestamp(new Date().toISOString());
+        const cube = {
+          id,
+          label,
+          timestampLabel,
+          stats: ndviStats,
+          bands,
+        };
 
-      return [...prev, cube];
-    });
-    setSelectedCubeId(id);
-    setSelectedVisualization("NDVI");
+        void saveCubeToIndexedDB(
+          id,
+          { label, timestampLabel, stats: ndviStats },
+          blobsForIdb
+        ).catch((e) => console.warn("IndexedDB:", e));
 
-    return { savedToSupabase, persistError };
-  }, []);
+        return [...prev, cube];
+      });
+      setSelectedCubeId(id);
+      setSelectedVisualization("NDVI");
+
+      return { savedToSupabase, persistError };
+    },
+    [refreshCubes]
+  );
 
   const clearLocalCubes = useCallback(async () => {
     try {
@@ -252,10 +284,8 @@ export function useSpectralCubes() {
     } catch (e) {
       console.warn("No se pudo borrar IndexedDB:", e);
     }
-    const { merged } = await loadMergedCubes();
-    setCubes(merged);
-    setSelectedCubeId(merged[0]?.id ?? null);
-  }, []);
+    await refreshCubes();
+  }, [refreshCubes]);
 
   /**
    * Borra el cube en Supabase (tablas + Storage), en IndexedDB y lo quita de la UI.
@@ -312,5 +342,6 @@ export function useSpectralCubes() {
     clearLocalCubes,
     deleteCubeById,
     deletePendingId,
+    refreshCubes,
   };
 }

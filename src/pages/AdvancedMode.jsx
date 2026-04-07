@@ -202,6 +202,23 @@ export default function AdvancedMode() {
         </div>
       </div>
 
+      {supabase && (
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/90 p-4">
+          <p className="text-sm font-medium text-emerald-900">
+            Cubes en la nube (Supabase)
+          </p>
+          <p className="mt-1 text-sm text-emerald-800">
+            Las imágenes se suben al bucket{" "}
+            <code className="rounded bg-white px-1 text-xs">spectral-captures</code>{" "}
+            y las URLs se guardan en{" "}
+            <code className="rounded bg-white px-1 text-xs">captures</code> /{" "}
+            <code className="rounded bg-white px-1 text-xs">capture_images</code>.
+            Cualquier usuario puede ver los mismos cubes al entrar en la web (si
+            en Supabase tienes lectura pública o las políticas del script SQL).
+          </p>
+        </div>
+      )}
+
       {!supabase && (
         <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
           <p className="font-semibold text-amber-900">

@@ -87,11 +87,13 @@ export default function CubeUploadPanel({ onCubeAccepted, disabled }) {
       });
 
       if (result?.savedToSupabase) {
-        setMessage("Cube guardado en Supabase.");
+        setMessage(
+          "Cube guardado en la base de datos y en Storage. Cualquier persona con el enlace puede verlo al abrir o recargar la página."
+        );
       } else if (result?.persistError) {
         setMessage(result.persistError);
       } else {
-        setMessage("Cube añadido en esta sesión.");
+        setMessage("Cube añadido solo en este navegador (no visible para otros).");
       }
       setDraft(emptyDraft());
     } catch (err) {
@@ -185,7 +187,7 @@ export default function CubeUploadPanel({ onCubeAccepted, disabled }) {
         )}
         {message && (
           <span
-            className={`text-xs ${
+            className={`max-w-xl text-xs ${
               message.startsWith("Cube guardado")
                 ? "text-emerald-700"
                 : "text-amber-700"
