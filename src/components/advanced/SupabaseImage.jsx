@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { signedUrlFromPublicStorageUrl } from "@/lib/supabaseStorageUrl";
+import {
+  parsePublicStorageUrl,
+  signedUrlFromPublicStorageUrl,
+} from "@/lib/supabaseStorageUrl";
 
 /**
- * Muestra una imagen; si es URL de Supabase Storage, intenta URL firmada
- * para que cargue aunque el acceso público directo falle.
+ * Muestra una imagen; si es URL de Supabase Storage, prioriza URL firmada
+ * (funciona aunque el acceso público directo falle o haya diferencias de URL).
  */
 export default function SupabaseImage({ src, alt, className }) {
   const [resolved, setResolved] = useState(src);
@@ -14,14 +17,27 @@ export default function SupabaseImage({ src, alt, className }) {
   useEffect(() => {
     setFailed(false);
     fallbackTried.current = false;
-    setResolved(src);
-    if (!src || !supabase || src.startsWith("blob:") || src.startsWith("data:")) {
+
+    if (!src) {
+      setResolved("");
       return;
     }
+    if (src.startsWith("blob:") || src.startsWith("data:")) {
+      setResolved(src);
+      return;
+    }
+
+    if (!supabase || !parsePublicStorageUrl(src)) {
+      setResolved(src);
+      return;
+    }
+
     let cancelled = false;
+    setResolved(src);
     (async () => {
       const signed = await signedUrlFromPublicStorageUrl(src);
-      if (!cancelled && signed) setResolved(signed);
+      if (cancelled) return;
+      if (signed) setResolved(signed);
     })();
     return () => {
       cancelled = true;
@@ -33,9 +49,10 @@ export default function SupabaseImage({ src, alt, className }) {
   return (
     <div className="flex flex-col items-center">
       <img
-        src={resolved}
+        src={resolved || src}
         alt={alt}
         className={className}
+        referrerPolicy="no-referrer"
         onError={async () => {
           if (!src || src.startsWith("blob:")) {
             setFailed(true);
@@ -46,6 +63,10 @@ export default function SupabaseImage({ src, alt, className }) {
             const fallback = await signedUrlFromPublicStorageUrl(src);
             if (fallback && fallback !== resolved) {
               setResolved(fallback);
+              return;
+            }
+            if (!fallback && resolved !== src) {
+              setResolved(src);
               return;
             }
           }

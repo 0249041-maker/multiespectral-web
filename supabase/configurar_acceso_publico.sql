@@ -54,7 +54,8 @@ CREATE POLICY "capture_images_anon_insert"
 -- Nombre: spectral-captures
 -- Public bucket: SÍ (o ejecuta las políticas de abajo)
 
--- Permiso para LEER imágenes (cualquiera puede verlas)
+-- Permiso para LEER imágenes (cualquiera puede verlas).
+-- Necesario también para URLs firmadas (createSignedUrl) desde el cliente con anon.
 DROP POLICY IF EXISTS "spectral_storage_anon_select" ON storage.objects;
 CREATE POLICY "spectral_storage_anon_select"
   ON storage.objects FOR SELECT
