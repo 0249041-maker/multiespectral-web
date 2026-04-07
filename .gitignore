@@ -4,3 +4,6 @@ dist
 .env.local
 .vite
 .DS_Store
+.venv-yolo
+# Copia en la raíz; el despliegue usa public/models/strawberry_yolo_best.onnx
+/strawberry_yolo_best.onnx

@@ -1,7 +1,8 @@
 import * as ort from "onnxruntime-web";
 
 const DEFAULT_MODEL_PATH =
-  import.meta.env.VITE_YOLO_STRAWBERRY_MODEL_URL ?? "/models/strawberry-yolo11.onnx";
+  import.meta.env.VITE_YOLO_STRAWBERRY_MODEL_URL ??
+  "/models/strawberry_yolo_best.onnx";
 
 const INPUT_SIZE = 640;
 let ortConfigured = false;
