@@ -64,20 +64,16 @@ async function loadCubesFromSupabase() {
     .select("capture_id, img_r, img_g, img_b, img_re, img_nir, img_ndvi")
     .in("capture_id", ids);
 
-  if (withNdvi.error) {
-    const msg = `${withNdvi.error.message ?? ""}`;
-    if (/img_ndvi|column/i.test(msg)) {
-      const basic = await supabase
-        .from("capture_images")
-        .select("capture_id, img_r, img_g, img_b, img_re, img_nir")
-        .in("capture_id", ids);
-      if (basic.error) throw basic.error;
-      imagesRows = basic.data ?? [];
-    } else {
-      throw withNdvi.error;
-    }
-  } else {
+  if (!withNdvi.error) {
     imagesRows = withNdvi.data ?? [];
+  } else {
+    // Si falta la columna img_ndvi (400) u otro error en el SELECT amplio, reintenta sin NDVI.
+    const basic = await supabase
+      .from("capture_images")
+      .select("capture_id, img_r, img_g, img_b, img_re, img_nir")
+      .in("capture_id", ids);
+    if (basic.error) throw basic.error;
+    imagesRows = basic.data ?? [];
   }
 
   const byCapture = new Map();
