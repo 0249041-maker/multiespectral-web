@@ -1,3 +1,4 @@
+import SupabaseEnvBanner from "./components/SupabaseEnvBanner.jsx";
 import { StrawberryDetectionProvider } from "./context/StrawberryDetectionContext.jsx";
 import DashboardBasic from "./pages/DashboardBasic.jsx";
 import AdvancedMode from "./pages/AdvancedMode.jsx";
@@ -13,6 +14,7 @@ function App() {
   return (
     <StrawberryDetectionProvider>
     <div className="min-h-screen bg-slate-50">
+      <SupabaseEnvBanner />
       <header className="border-b bg-white">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 md:px-6">
           <div className="flex items-center gap-2">
