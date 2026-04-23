@@ -1,4 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 const StrawberryDetectionContext = createContext(null);
 
@@ -6,6 +13,8 @@ export function StrawberryDetectionProvider({ children }) {
   const [fruitCount, setFruitCount] = useState(null);
   const [lastError, setLastError] = useState(null);
   const [lastRunAt, setLastRunAt] = useState(null);
+  /** RGB compuesto multiespectral (modo avanzado) para inferencia YOLO. */
+  const [spectralRgbBitmap, setSpectralRgbBitmapState] = useState(null);
 
   const setDetectionResult = useCallback((count, err = null) => {
     if (err != null && err !== "") {
@@ -18,14 +27,33 @@ export function StrawberryDetectionProvider({ children }) {
     setLastRunAt(new Date().toISOString());
   }, []);
 
+  const setSpectralRgbBitmap = useCallback((next) => {
+    setSpectralRgbBitmapState((prev) => {
+      if (prev) prev.close();
+      return next;
+    });
+  }, []);
+
+  useEffect(
+    () => () => {
+      setSpectralRgbBitmapState((prev) => {
+        if (prev) prev.close();
+        return null;
+      });
+    },
+    []
+  );
+
   const value = useMemo(
     () => ({
       fruitCount,
       lastError,
       lastRunAt,
       setDetectionResult,
+      spectralRgbBitmap,
+      setSpectralRgbBitmap,
     }),
-    [fruitCount, lastError, lastRunAt, setDetectionResult]
+    [fruitCount, lastError, lastRunAt, setDetectionResult, spectralRgbBitmap, setSpectralRgbBitmap]
   );
 
   return (

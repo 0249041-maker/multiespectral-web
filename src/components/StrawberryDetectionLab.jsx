@@ -9,7 +9,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function StrawberryDetectionLab() {
-  const { setDetectionResult } = useStrawberryDetection();
+  const { setDetectionResult, spectralRgbBitmap } = useStrawberryDetection();
   const [busy, setBusy] = useState(false);
   const [localHint, setLocalHint] = useState(null);
   const bitmapRef = useRef(null);
@@ -56,9 +56,11 @@ export default function StrawberryDetectionLab() {
   useEffect(() => () => revokePreview(), [revokePreview]);
 
   const runDetection = useCallback(async () => {
-    const bmp = bitmapRef.current;
+    const bmp = spectralRgbBitmap ?? bitmapRef.current;
     if (!bmp) {
-      setLocalHint("Primero sube una imagen RGB.");
+      setLocalHint(
+        "Genera el RGB en modo avanzado (visualización RGB con R+G+B) o sube una imagen aquí."
+      );
       return;
     }
     setBusy(true);
@@ -102,7 +104,7 @@ export default function StrawberryDetectionLab() {
     } finally {
       setBusy(false);
     }
-  }, [setDetectionResult]);
+  }, [setDetectionResult, spectralRgbBitmap]);
 
   return (
     <section
@@ -115,12 +117,21 @@ export default function StrawberryDetectionLab() {
             Pruebas de detección (RGB · YOLOv11 ONNX)
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Sube una imagen <strong>RGB</strong> del cultivo. Se cuenta el total
-            de frutos detectados (sin distinguir madurez). El número se refleja
-            arriba en modo básico.
+            Si en <strong>modo avanzado</strong> generas la vista{" "}
+            <strong>RGB</strong> del cube multiespectral, esa imagen se usa
+            automáticamente para YOLO. Si no, sube una imagen RGB aquí. El
+            conteo se muestra arriba en modo básico.
           </p>
         </div>
       </div>
+
+      {spectralRgbBitmap ? (
+        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+          <span className="font-semibold">RGB multiespectral listo</span> (
+          {spectralRgbBitmap.width}×{spectralRgbBitmap.height} px). «Detectar
+          frutos» usará esta imagen antes que un archivo subido.
+        </p>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <input

@@ -1,4 +1,5 @@
 import CubeUploadPanel from "@/components/advanced/CubeUploadPanel";
+import SpectralRgbComposite from "@/components/advanced/SpectralRgbComposite";
 import SupabaseImage from "@/components/advanced/SupabaseImage";
 import { supabase } from "@/lib/supabase";
 import { useSpectralCubes } from "@/state/useSpectralCubes";
@@ -97,33 +98,17 @@ function SpectralImagePreview({ visualization, bands, empty }) {
   }
 
   if (visualization === "RGB" && bands.r && bands.g && bands.b) {
+    const fullFive = Boolean(bands.re && bands.nir);
     return (
-      <div className="grid w-full max-w-3xl grid-cols-3 gap-2">
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-[10px] text-slate-400">R</span>
-          <SupabaseImage
-            src={bands.r}
-            alt="Canal R"
-            className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
-          />
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-[10px] text-slate-400">G</span>
-          <SupabaseImage
-            src={bands.g}
-            alt="Canal G"
-            className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
-          />
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-[10px] text-slate-400">B</span>
-          <SupabaseImage
-            src={bands.b}
-            alt="Canal B"
-            className="h-auto max-h-[min(50vh,28rem)] w-full rounded-lg object-contain"
-          />
-        </div>
-      </div>
+      <SpectralRgbComposite
+        bands={bands}
+        className="max-h-[min(70vh,32rem)] w-full rounded-lg object-contain shadow-lg"
+        caption={
+          fullFive
+            ? "RGB en el navegador: G, B, RE y NIR se alinean automáticamente a R (correlación). El rojo de pantalla mezcla NIR+R+RE; G y B son los canales alineados. Estiramiento min–max por banda."
+            : "RGB natural con G y B alineados a R. Sube RE y NIR para la composición de cinco bandas."
+        }
+      />
     );
   }
 

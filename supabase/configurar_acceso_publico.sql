@@ -9,13 +9,32 @@
 -- ============================================
 -- 0. Buckets de Storage (capture_image = actual por defecto en la app; spectral-captures = compatibilidad)
 -- ============================================
+-- Tipos permitidos en subida (Storage valida el MIME). Incluye BMP (algunos navegadores usan image/x-ms-bmp).
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES ('capture_image', 'capture_image', true, 52428800, ARRAY['image/png', 'image/jpeg', 'image/webp']::text[])
-ON CONFLICT (id) DO UPDATE SET public = true;
+VALUES (
+  'capture_image',
+  'capture_image',
+  true,
+  52428800,
+  ARRAY['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/x-ms-bmp']::text[]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = EXCLUDED.public,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES ('spectral-captures', 'spectral-captures', true, 52428800, ARRAY['image/png', 'image/jpeg', 'image/webp']::text[])
-ON CONFLICT (id) DO UPDATE SET public = true;
+VALUES (
+  'spectral-captures',
+  'spectral-captures',
+  true,
+  52428800,
+  ARRAY['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/x-ms-bmp']::text[]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = EXCLUDED.public,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- ============================================
 -- 1. Tabla captures: permitir lectura anónima

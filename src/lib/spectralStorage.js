@@ -6,6 +6,60 @@ export const SPECTRAL_BUCKET =
 
 /** @typedef {{ r: File; g: File; b: File; re: File; nir: File }} SpectralFiles */
 
+/**
+ * Convierte respuestas de error de PostgREST/Storage en un mensaje legible (RLS, FK, etc.).
+ * @param {unknown} err
+ */
+export function formatSupabaseError(err) {
+  if (err == null) return "Error desconocido";
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && "message" in err) {
+    const o = /** @type {{ message?: string; code?: string; details?: string; hint?: string }} */ (
+      err
+    );
+    const parts = [
+      o.message,
+      o.code ? `[${o.code}]` : "",
+      o.details,
+      o.hint,
+    ].filter((s) => typeof s === "string" && s.length > 0);
+    if (parts.length) return parts.join(" · ");
+  }
+  return String(err);
+}
+
+/**
+ * @param {unknown} err
+ */
+function throwSupabase(err) {
+  throw new Error(formatSupabaseError(err));
+}
+
+/**
+ * Tras un fallo a mitad de persistencia, borra lo creado para no dejar captures huérfanas.
+ * @param {string} captureId
+ */
+async function rollbackPartialCapture(captureId) {
+  if (!supabase || !captureId) return;
+
+  await supabase.from("capture_images").delete().eq("capture_id", captureId);
+
+  const { data: listed, error: listErr } = await supabase.storage
+    .from(SPECTRAL_BUCKET)
+    .list(captureId);
+
+  if (!listErr && listed?.length) {
+    const paths = listed
+      .filter((f) => f.id)
+      .map((f) => `${captureId}/${f.name}`);
+    if (paths.length) {
+      await supabase.storage.from(SPECTRAL_BUCKET).remove(paths);
+    }
+  }
+
+  await supabase.from("captures").delete().eq("id", captureId);
+}
+
 const extOf = (file) => {
   const p = file.name.split(".").pop();
   return p && p.length <= 5 ? p.toLowerCase() : "png";
@@ -23,59 +77,68 @@ export async function persistSpectralCube(files, ndviBlob = null) {
     throw new Error("Supabase no está configurado");
   }
 
-  const { data: capRow, error: capErr } = await supabase
-    .from("captures")
-    .insert({ timestamp: new Date().toISOString() })
-    .select("id")
-    .single();
+  let captureId = /** @type {string | null} */ (null);
 
-  if (capErr) throw capErr;
-  const captureId = capRow.id;
+  try {
+    const { data: capRow, error: capErr } = await supabase
+      .from("captures")
+      .insert({ timestamp: new Date().toISOString() })
+      .select("id")
+      .single();
 
-  const bands = { r: null, g: null, b: null, re: null, nir: null, ndvi: null };
+    if (capErr) throwSupabase(capErr);
+    captureId = capRow.id;
 
-  const uploadOne = async (key, fileOrBlob) => {
-    const isBlob = typeof Blob !== "undefined" && fileOrBlob instanceof Blob;
-    const ext = isBlob ? "png" : extOf(/** @type {File} */ (fileOrBlob));
-    const path = `${captureId}/${key}.${ext}`;
-    const contentType = isBlob ? "image/png" : fileOrBlob.type || undefined;
-    const { error: upErr } = await supabase.storage
-      .from(SPECTRAL_BUCKET)
-      .upload(path, fileOrBlob, { upsert: true, contentType });
-    if (upErr) throw upErr;
-    const { data: pub } = supabase.storage
-      .from(SPECTRAL_BUCKET)
-      .getPublicUrl(path);
-    return pub.publicUrl;
-  };
+    const bands = { r: null, g: null, b: null, re: null, nir: null, ndvi: null };
 
-  for (const key of ["r", "g", "b", "re", "nir"]) {
-    const f = files[key];
-    if (f) bands[key] = await uploadOne(key, f);
+    const uploadOne = async (key, fileOrBlob) => {
+      const isBlob = typeof Blob !== "undefined" && fileOrBlob instanceof Blob;
+      const ext = isBlob ? "png" : extOf(/** @type {File} */ (fileOrBlob));
+      const path = `${captureId}/${key}.${ext}`;
+      const contentType = isBlob ? "image/png" : fileOrBlob.type || undefined;
+      const { error: upErr } = await supabase.storage
+        .from(SPECTRAL_BUCKET)
+        .upload(path, fileOrBlob, { upsert: true, contentType });
+      if (upErr) throwSupabase(upErr);
+      const { data: pub } = supabase.storage
+        .from(SPECTRAL_BUCKET)
+        .getPublicUrl(path);
+      return pub.publicUrl;
+    };
+
+    for (const key of ["r", "g", "b", "re", "nir"]) {
+      const f = files[key];
+      if (f) bands[key] = await uploadOne(key, f);
+    }
+
+    if (ndviBlob) {
+      bands.ndvi = await uploadOne("ndvi", ndviBlob);
+    }
+
+    const row = {
+      capture_id: captureId,
+      img_r: bands.r,
+      img_g: bands.g,
+      img_b: bands.b,
+      img_re: bands.re,
+      img_nir: bands.nir,
+    };
+    if (bands.ndvi) row.img_ndvi = bands.ndvi;
+
+    let imgErr = (await supabase.from("capture_images").insert(row)).error;
+    if (imgErr && bands.ndvi) {
+      delete row.img_ndvi;
+      imgErr = (await supabase.from("capture_images").insert(row)).error;
+    }
+    if (imgErr) throwSupabase(imgErr);
+
+    return { id: captureId, bands };
+  } catch (e) {
+    if (captureId) {
+      await rollbackPartialCapture(captureId);
+    }
+    throw e instanceof Error ? e : new Error(formatSupabaseError(e));
   }
-
-  if (ndviBlob) {
-    bands.ndvi = await uploadOne("ndvi", ndviBlob);
-  }
-
-  const row = {
-    capture_id: captureId,
-    img_r: bands.r,
-    img_g: bands.g,
-    img_b: bands.b,
-    img_re: bands.re,
-    img_nir: bands.nir,
-  };
-  if (bands.ndvi) row.img_ndvi = bands.ndvi;
-
-  let imgErr = (await supabase.from("capture_images").insert(row)).error;
-  if (imgErr && bands.ndvi) {
-    delete row.img_ndvi;
-    imgErr = (await supabase.from("capture_images").insert(row)).error;
-  }
-  if (imgErr) throw imgErr;
-
-  return { id: captureId, bands };
 }
 
 /**
