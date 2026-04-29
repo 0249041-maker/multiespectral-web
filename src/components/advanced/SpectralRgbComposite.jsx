@@ -6,8 +6,17 @@ import { buildSpectralRgbCompositeBlob } from "@/lib/spectralRgbComposite";
  * Una sola imagen RGB generada en cliente a partir de las URLs de banda.
  * Con 5 bandas: mezcla NIR+R+RE en el canal rojo del monitor; G y B en verde y azul.
  */
-export default function SpectralRgbComposite({ bands, className, caption }) {
-  const { setSpectralRgbBitmap } = useStrawberryDetection();
+export default function SpectralRgbComposite({
+  bands,
+  className,
+  caption,
+  mode = "multispectral",
+  publishForDetection = false,
+}) {
+  const {
+    setSpectralRgbBitmap,
+    setSpectralRgbBlob,
+  } = useStrawberryDetection();
   const [resolved, setResolved] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState(null);
@@ -19,6 +28,10 @@ export default function SpectralRgbComposite({ bands, className, caption }) {
     setBusy(true);
     setError(null);
     setResolved("");
+    if (publishForDetection) {
+      setSpectralRgbBlob(null);
+      setSpectralRgbBitmap(null);
+    }
 
     (async () => {
       try {
@@ -28,8 +41,11 @@ export default function SpectralRgbComposite({ bands, className, caption }) {
           b: bands.b,
           re: bands.re ?? null,
           nir: bands.nir ?? null,
-        });
+        }, { mode });
         if (cancelled) return;
+        if (publishForDetection) {
+          setSpectralRgbBlob(blob);
+        }
         let bmp = null;
         try {
           bmp = await createImageBitmap(blob);
@@ -40,7 +56,7 @@ export default function SpectralRgbComposite({ bands, className, caption }) {
           bmp?.close();
           return;
         }
-        if (bmp) {
+        if (bmp && publishForDetection) {
           setSpectralRgbBitmap(bmp);
         }
         blobUrl = URL.createObjectURL(blob);
@@ -52,7 +68,10 @@ export default function SpectralRgbComposite({ bands, className, caption }) {
         setResolved(blobUrl);
       } catch (e) {
         if (!cancelled) {
-          setSpectralRgbBitmap(null);
+          if (publishForDetection) {
+            setSpectralRgbBlob(null);
+            setSpectralRgbBitmap(null);
+          }
           setError(e instanceof Error ? e.message : "Error al generar RGB.");
         }
       } finally {
@@ -70,7 +89,10 @@ export default function SpectralRgbComposite({ bands, className, caption }) {
     bands.b,
     bands.re,
     bands.nir,
+    mode,
+    publishForDetection,
     setSpectralRgbBitmap,
+    setSpectralRgbBlob,
   ]);
 
   if (busy) {

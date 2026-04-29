@@ -142,6 +142,61 @@ export async function persistSpectralCube(files, ndviBlob = null) {
 }
 
 /**
+ * Reescribe bandas de un capture existente y actualiza su fila en capture_images.
+ * @param {string} captureId
+ * @param {{ r?: Blob; g?: Blob; b?: Blob; re?: Blob; nir?: Blob }} files
+ * @param {Blob | null} ndviBlob
+ * @returns {Promise<{ id: string; bands: Record<string, string | null> }>}
+ */
+export async function upsertSpectralCubeBands(captureId, files, ndviBlob = null) {
+  if (!supabase) throw new Error("Supabase no está configurado");
+  if (!captureId) throw new Error("captureId no válido");
+
+  const bands = { r: null, g: null, b: null, re: null, nir: null, ndvi: null };
+
+  const uploadOne = async (key, fileOrBlob) => {
+    const ext = "png";
+    const path = `${captureId}/${key}.${ext}`;
+    const contentType = "image/png";
+    const { error: upErr } = await supabase.storage
+      .from(SPECTRAL_BUCKET)
+      .upload(path, fileOrBlob, { upsert: true, contentType });
+    if (upErr) throwSupabase(upErr);
+    const { data: pub } = supabase.storage.from(SPECTRAL_BUCKET).getPublicUrl(path);
+    return pub.publicUrl;
+  };
+
+  for (const key of ["r", "g", "b", "re", "nir"]) {
+    const f = files[key];
+    if (f) bands[key] = await uploadOne(key, f);
+  }
+  if (ndviBlob) {
+    bands.ndvi = await uploadOne("ndvi", ndviBlob);
+  }
+
+  const row = {
+    capture_id: captureId,
+    img_r: bands.r,
+    img_g: bands.g,
+    img_b: bands.b,
+    img_re: bands.re,
+    img_nir: bands.nir,
+  };
+  if (bands.ndvi) row.img_ndvi = bands.ndvi;
+
+  let query = supabase.from("capture_images").update(row).eq("capture_id", captureId);
+  let imgErr = (await query).error;
+  if (imgErr && bands.ndvi) {
+    delete row.img_ndvi;
+    query = supabase.from("capture_images").update(row).eq("capture_id", captureId);
+    imgErr = (await query).error;
+  }
+  if (imgErr) throwSupabase(imgErr);
+
+  return { id: captureId, bands };
+}
+
+/**
  * Crea URLs locales para bandas proporcionadas y opcionalmente NDVI.
  * @param {{ r?: File; g?: File; b?: File; re?: File; nir?: File }} files
  * @param {Blob | null} ndviBlob

@@ -48,7 +48,7 @@ function App() {
         >
           <StrawberryDetectionLab />
         </Suspense>
-        {showAdvanced && <AdvancedMode />}
+        <AdvancedMode uiVisible={showAdvanced} />
       </main>
     </div>
     </StrawberryDetectionProvider>

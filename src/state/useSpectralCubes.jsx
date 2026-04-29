@@ -12,7 +12,13 @@ import {
   localPartialBandUrls,
   persistSpectralCube,
   revokeSpectralCubeUrls,
+  upsertSpectralCubeBands,
 } from "@/lib/spectralStorage";
+import { compensateBandsWithWhiteReference } from "@/lib/whiteReferenceCompensation";
+import {
+  normalizeSupabaseStorageImageUrl,
+  signedUrlFromPublicStorageUrl,
+} from "@/lib/supabaseStorageUrl";
 
 function formatCaptureTimestamp(ts) {
   const d = ts ? new Date(ts) : new Date();
@@ -193,18 +199,37 @@ export function useSpectralCubes() {
   }, []);
 
   /**
-   * @param {{ files: { r?: File; g?: File; b?: File; re?: File; nir?: File } }} payload
+   * @param {{
+   *  files: { r?: Blob; g?: Blob; b?: Blob; re?: Blob; nir?: Blob },
+   *  whiteReferenceFiles?: { r?: Blob; g?: Blob; b?: Blob; re?: Blob; nir?: Blob }
+   * }} payload
    */
   const addCubeFromUpload = useCallback(
     async (payload) => {
-      const files = payload.files;
-      if (!files.r || !files.nir) {
+      const rawFiles = payload.files;
+      if (!rawFiles.r || !rawFiles.nir) {
         throw new Error("Se requieren R y NIR");
       }
+      const whiteReferenceFiles = payload.whiteReferenceFiles ?? {};
 
       let savedToSupabase = false;
       let persistError = null;
       let ndviStats = { mean: 0, min: -1, max: 1 };
+      let compensatedCount = 0;
+
+      let files = rawFiles;
+      try {
+        const compensated = await compensateBandsWithWhiteReference(
+          rawFiles,
+          whiteReferenceFiles
+        );
+        files = compensated.files;
+        compensatedCount = compensated.compensatedCount;
+      } catch (e) {
+        throw e instanceof Error
+          ? e
+          : new Error("Error al aplicar compensación por referencia blanca.");
+      }
 
       let ndviBlob = null;
       try {
@@ -221,7 +246,11 @@ export function useSpectralCubes() {
           savedToSupabase = true;
           await refreshCubes(res.id);
           setSelectedVisualization("NDVI");
-          return { savedToSupabase: true, persistError: null };
+          return {
+            savedToSupabase: true,
+            persistError: null,
+            compensatedCount,
+          };
         } catch (e) {
           persistError =
             e instanceof Error ? e.message : "No se pudo guardar en Supabase";
@@ -269,7 +298,7 @@ export function useSpectralCubes() {
       setSelectedCubeId(id);
       setSelectedVisualization("NDVI");
 
-      return { savedToSupabase, persistError };
+      return { savedToSupabase, persistError, compensatedCount };
     },
     [refreshCubes]
   );
@@ -282,6 +311,128 @@ export function useSpectralCubes() {
     }
     await refreshCubes();
   }, [refreshCubes]);
+
+  const reprocessSelectedCubeWithWhite = useCallback(
+    async (cubeId, whiteReferenceFiles) => {
+      const cube = cubes.find((c) => c.id === cubeId);
+      if (!cube || !cube.bands) {
+        throw new Error("No hay cube seleccionado para reprocesar.");
+      }
+      if (!cube.bands.r || !cube.bands.nir) {
+        throw new Error("El cube seleccionado no tiene bandas R y NIR.");
+      }
+
+      const whiteCount = ["r", "g", "b", "re", "nir"].filter(
+        (k) => whiteReferenceFiles?.[k]
+      ).length;
+      if (whiteCount === 0) {
+        throw new Error("Primero guarda al menos una banda de referencia blanca.");
+      }
+
+      async function blobFromBandUrl(url) {
+        if (!url) return null;
+        const normalized = normalizeSupabaseStorageImageUrl(url);
+        const tryUrls = [normalized];
+        const signed = await signedUrlFromPublicStorageUrl(normalized);
+        if (signed) tryUrls.unshift(signed);
+
+        let lastErr = null;
+        for (const u of tryUrls) {
+          try {
+            const res = await fetch(u, { credentials: "omit" });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.blob();
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+        throw new Error(
+          `No se pudo descargar una banda del cube seleccionado (${lastErr instanceof Error ? lastErr.message : "error"}).`
+        );
+      }
+
+      const sourceFiles = {
+        r: await blobFromBandUrl(cube.bands.r),
+        g: cube.bands.g ? await blobFromBandUrl(cube.bands.g) : null,
+        b: cube.bands.b ? await blobFromBandUrl(cube.bands.b) : null,
+        re: cube.bands.re ? await blobFromBandUrl(cube.bands.re) : null,
+        nir: await blobFromBandUrl(cube.bands.nir),
+      };
+
+      const compensated = await compensateBandsWithWhiteReference(
+        sourceFiles,
+        whiteReferenceFiles ?? {}
+      );
+      const files = compensated.files;
+      const compensatedCount = compensated.compensatedCount;
+      if (!files.r || !files.nir) {
+        throw new Error("No fue posible compensar R y NIR del cube seleccionado.");
+      }
+
+      const ndviResult = await computeNdviPngFromFiles(
+        new File([files.r], "r.png", { type: "image/png" }),
+        new File([files.nir], "nir.png", { type: "image/png" })
+      );
+      const ndviBlob = ndviResult.blob;
+      const ndviStats = ndviResult.stats;
+
+      const nextBands = localPartialBandUrls(files, ndviBlob);
+
+      setCubes((prev) =>
+        prev.map((c) => {
+          if (c.id !== cubeId) return c;
+          if (c.bands) revokeSpectralCubeUrls(c.bands);
+          return {
+            ...c,
+            bands: nextBands,
+            stats: ndviStats,
+          };
+        })
+      );
+      setSelectedVisualization("NDVI");
+
+      // Guarda local para persistir en este navegador.
+      try {
+        await saveCubeToIndexedDB(
+          cubeId,
+          {
+            label: cube.label,
+            timestampLabel: cube.timestampLabel,
+            stats: ndviStats,
+          },
+          {
+            r: files.r,
+            g: files.g,
+            b: files.b,
+            re: files.re,
+            nir: files.nir,
+            ndvi: ndviBlob,
+          }
+        );
+      } catch (e) {
+        console.warn("IndexedDB al reprocesar cube:", e);
+      }
+
+      // Si existe en Supabase (id no local), también persiste en servidor.
+      if (supabase && !String(cubeId).startsWith("local-")) {
+        try {
+          const res = await upsertSpectralCubeBands(cubeId, files, ndviBlob);
+          setCubes((prev) =>
+            prev.map((c) => (c.id === cubeId ? { ...c, bands: res.bands, stats: ndviStats } : c))
+          );
+        } catch (e) {
+          const msg =
+            e instanceof Error
+              ? e.message
+              : "No se pudo guardar reproceso en Supabase";
+          setError(msg);
+        }
+      }
+
+      return { compensatedCount };
+    },
+    [cubes]
+  );
 
   /**
    * Borra el cube en Supabase (tablas + Storage), en IndexedDB y lo quita de la UI.
@@ -339,5 +490,6 @@ export function useSpectralCubes() {
     deleteCubeById,
     deletePendingId,
     refreshCubes,
+    reprocessSelectedCubeWithWhite,
   };
 }

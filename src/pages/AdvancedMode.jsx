@@ -1,8 +1,18 @@
 import CubeUploadPanel from "@/components/advanced/CubeUploadPanel";
+import SpectralBandColorized from "@/components/advanced/SpectralBandColorized";
+import SpectralComputedIndex from "@/components/advanced/SpectralComputedIndex";
+import SpectralNdviComposite from "@/components/advanced/SpectralNdviComposite";
 import SpectralRgbComposite from "@/components/advanced/SpectralRgbComposite";
 import SupabaseImage from "@/components/advanced/SupabaseImage";
+import { useStrawberryDetection } from "@/context/StrawberryDetectionContext";
 import { supabase } from "@/lib/supabase";
+import {
+  DEFAULT_MATURITY_THRESHOLDS,
+  getMaturityThresholds,
+  setMaturityThresholds,
+} from "@/lib/strawberryMaturity";
 import { useSpectralCubes } from "@/state/useSpectralCubes";
+import { useEffect, useState } from "react";
 
 const VISUALIZATIONS = [
   "NDRE",
@@ -19,7 +29,8 @@ const VISUALIZATIONS = [
   "EVI",
   "ARVI",
   "Cl Red",
-  "RGB",
+  "RGB natural",
+  "RGB multiespectral",
   "BLUE",
   "GREEN",
   "RED",
@@ -35,15 +46,21 @@ const BAND_BY_VIZ = {
   NIR: "nir",
 };
 
+const BAND_COLOR_MAP = {
+  // Pedido del usuario: 450 azul->negro, 550 verde->negro, 656 rojo->negro,
+  // 725 negro->magenta, 850 blanco->negro
+  BLUE: { start: "#1E40FF", end: "#000000" },
+  GREEN: { start: "#22C55E", end: "#000000" },
+  RED: { start: "#EF4444", end: "#000000" },
+  RE: { start: "#000000", end: "#FF00FF" },
+  NIR: { start: "#FFFFFF", end: "#000000" },
+};
+
 const INDEX_LABELS = new Set([
   "NDRE",
   "NDRI",
   "NDGI",
-  "CI_re",
-  "SIPI",
-  "VARI",
   "NDVI",
-  "GNDVI",
   "MSR",
   "Cl_green",
   "MTCI",
@@ -52,7 +69,11 @@ const INDEX_LABELS = new Set([
   "Cl Red",
 ]);
 
-function SpectralImagePreview({ visualization, bands, empty }) {
+/** Índices calculados al vuelo desde bandas (menú desplegable). */
+const COMPUTED_INDEX_KEYS = new Set(["GNDVI", "CI_re", "SIPI", "VARI"]);
+const MATURITY_STORAGE_KEY = "maturity-thresholds-v1";
+
+function SpectralImagePreview({ visualization, bands, empty, onComputedStats }) {
   if (empty || !bands) {
     if (empty) {
       return (
@@ -64,6 +85,35 @@ function SpectralImagePreview({ visualization, bands, empty }) {
     }
     return (
       <div className="h-[clamp(14rem,20vw,28rem)] w-[clamp(14rem,20vw,28rem)] rounded-full bg-gradient-to-tr from-slate-700 via-slate-100 to-slate-800" />
+    );
+  }
+
+  if (visualization === "NDVI" && bands.r && bands.nir) {
+    return (
+      <div className="flex max-w-full flex-col items-center gap-3 sm:flex-row sm:items-stretch sm:justify-center sm:gap-4">
+        <SpectralNdviComposite
+          bands={bands}
+          className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
+        />
+        <div
+          className="flex h-[min(50vh,24rem)] min-h-[180px] flex-row items-stretch justify-center gap-2 sm:h-auto sm:min-h-[min(50vh,24rem)] sm:w-14 sm:flex-col sm:items-center sm:py-1"
+          aria-hidden
+        >
+          <span className="self-center text-[10px] font-medium text-slate-300 sm:order-1">
+            1.0
+          </span>
+          <div
+            className="mx-auto w-full max-w-[12rem] flex-1 rounded border border-white/25 sm:order-2 sm:max-w-none sm:flex-1 sm:self-stretch"
+            style={{
+              background:
+                "linear-gradient(to top, rgb(139,0,0) 0%, rgb(255,200,80) 50%, rgb(0,109,44) 100%)",
+            }}
+          />
+          <span className="self-center text-[10px] font-medium text-slate-300 sm:order-3">
+            -1.0
+          </span>
+        </div>
+      </div>
     );
   }
 
@@ -97,16 +147,27 @@ function SpectralImagePreview({ visualization, bands, empty }) {
     );
   }
 
-  if (visualization === "RGB" && bands.r && bands.g && bands.b) {
+  if (
+    (visualization === "RGB natural" ||
+      visualization === "RGB multiespectral") &&
+    bands.r &&
+    bands.g &&
+    bands.b
+  ) {
     const fullFive = Boolean(bands.re && bands.nir);
+    const natural = visualization === "RGB natural";
     return (
       <SpectralRgbComposite
         bands={bands}
+        mode={natural ? "natural" : "multispectral"}
+        publishForDetection={natural}
         className="max-h-[min(70vh,32rem)] w-full rounded-lg object-contain shadow-lg"
         caption={
-          fullFive
-            ? "RGB en el navegador: G, B, RE y NIR se alinean automáticamente a R (correlación). El rojo de pantalla mezcla NIR+R+RE; G y B son los canales alineados. Estiramiento min–max por banda."
-            : "RGB natural con G y B alineados a R. Sube RE y NIR para la composición de cinco bandas."
+          natural
+            ? "RGB natural: canales de pantalla R, G y B alineados a la banda R."
+            : fullFive
+              ? "RGB multiespectral: el rojo de pantalla mezcla NIR+R+RE; G y B alineados a R."
+              : "RGB multiespectral usa RGB natural cuando faltan RE/NIR."
         }
       />
     );
@@ -114,10 +175,33 @@ function SpectralImagePreview({ visualization, bands, empty }) {
 
   const bandKey = BAND_BY_VIZ[visualization];
   if (bandKey && bands[bandKey]) {
+    const palette = BAND_COLOR_MAP[visualization];
+    if (palette) {
+      return (
+        <SpectralBandColorized
+          src={bands[bandKey]}
+          startHex={palette.start}
+          endHex={palette.end}
+          alt={`Canal ${visualization} coloreado por intensidad`}
+          className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
+        />
+      );
+    }
     return (
       <SupabaseImage
         src={bands[bandKey]}
         alt={`Canal ${visualization}`}
+        className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
+      />
+    );
+  }
+
+  if (COMPUTED_INDEX_KEYS.has(visualization)) {
+    return (
+      <SpectralComputedIndex
+        visualization={visualization}
+        bands={bands}
+        onStats={onComputedStats}
         className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
       />
     );
@@ -149,7 +233,14 @@ function SpectralImagePreview({ visualization, bands, empty }) {
   );
 }
 
-export default function AdvancedMode() {
+export default function AdvancedMode({ uiVisible = true } = {}) {
+  const {
+    setSpectralCubeBands,
+    setSpectralCubeSelection,
+    setSelectedCubeNdviStats,
+  } = useStrawberryDetection();
+  const [computedIndexStats, setComputedIndexStats] = useState(null);
+  const [maturityUi, setMaturityUi] = useState(() => getMaturityThresholds());
   const {
     cubes,
     selectedCube,
@@ -160,16 +251,110 @@ export default function AdvancedMode() {
     loading,
     error,
     addCubeFromUpload,
+    reprocessSelectedCubeWithWhite,
     clearLocalCubes,
     deleteCubeById,
     deletePendingId,
   } = useSpectralCubes();
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(MATURITY_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const next = setMaturityThresholds(parsed);
+      setMaturityUi(next);
+    } catch {
+      // ignore malformed local storage
+    }
+  }, []);
+
+  useEffect(() => {
+    setComputedIndexStats(null);
+  }, [selectedVisualization, selectedCube?.id]);
+
+  const setThresholdValue = (key, value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return;
+    const next = setMaturityThresholds({ [key]: num });
+    setMaturityUi(next);
+    try {
+      window.localStorage.setItem(MATURITY_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage quota/private mode
+    }
+  };
+
+  const resetMaturityThresholds = () => {
+    const next = setMaturityThresholds(DEFAULT_MATURITY_THRESHOLDS);
+    setMaturityUi(next);
+    try {
+      window.localStorage.setItem(MATURITY_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  useEffect(() => {
+    setSpectralCubeSelection({
+      id: selectedCube?.id ?? null,
+      label: selectedCube?.label ?? null,
+    });
+  }, [selectedCube?.id, selectedCube?.label, setSpectralCubeSelection]);
+
+  useEffect(() => {
+    const stats = selectedCube?.stats;
+    if (
+      stats &&
+      typeof stats.mean === "number" &&
+      typeof stats.min === "number" &&
+      typeof stats.max === "number"
+    ) {
+      setSelectedCubeNdviStats({
+        mean: stats.mean,
+        min: stats.min,
+        max: stats.max,
+      });
+    } else {
+      setSelectedCubeNdviStats(null);
+    }
+  }, [selectedCube?.id, selectedCube?.stats, setSelectedCubeNdviStats]);
+
+  useEffect(() => {
+    const b = selectedCube?.bands;
+    if (b?.r && b?.g && b?.b && b?.re && b?.nir) {
+      setSpectralCubeBands({
+        r: b.r,
+        g: b.g,
+        b: b.b,
+        re: b.re,
+        nir: b.nir,
+      });
+    } else {
+      setSpectralCubeBands(null);
+    }
+    return () => setSpectralCubeBands(null);
+  }, [selectedCube?.bands, selectedCube?.id, setSpectralCubeBands]);
+
   const handleCubeAccepted = async (payload) => {
-    return addCubeFromUpload({ files: payload.files });
+    return addCubeFromUpload({
+      files: payload.files,
+      whiteReferenceFiles: payload.whiteReferenceFiles,
+    });
+  };
+
+  const handleApplyWhiteToSelected = async (whiteReferenceFiles) => {
+    if (!selectedCube?.id) {
+      throw new Error("Selecciona un cube antes de aplicar referencia blanca.");
+    }
+    return reprocessSelectedCubeWithWhite(selectedCube.id, whiteReferenceFiles);
   };
 
   const statsCube = selectedCube ?? cubes[0];
+
+  if (!uiVisible) {
+    return null;
+  }
 
   return (
     <section
@@ -254,7 +439,54 @@ export default function AdvancedMode() {
         </div>
       )}
 
-      <CubeUploadPanel onCubeAccepted={handleCubeAccepted} disabled={loading} />
+      <CubeUploadPanel
+        onCubeAccepted={handleCubeAccepted}
+        onApplyWhiteToSelected={handleApplyWhiteToSelected}
+        hasSelectedCube={Boolean(selectedCube)}
+        disabled={loading}
+      />
+
+      <details className="mb-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+          Ajuste manual de umbrales de madurez
+        </summary>
+        <p className="mt-2 text-xs text-slate-600">
+          VARI define la capa base. SIPI, GNDVI y CIre refinan madura vs sobremadura.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ["variInmaduraMin", "VARI verde => inmadura"],
+            ["variRedPixelMax", "Umbral píxel rojo (VARI)"],
+            ["redCoverageForMaduraMin", "Cobertura roja mínima para madura"],
+            ["variOverripeBaseMax", "VARI base => sobremadura"],
+            ["variNearOverripeMax", "VARI casi sobremadura"],
+            ["pigmentScoreSupportMin", "Soporte SIPI"],
+            ["gndviLowScoreSupportMin", "Soporte GNDVI bajo"],
+            ["cireLowScoreSupportMin", "Soporte CIre bajo"],
+            ["supportToPromoteOverripe", "N. soportes para subir"],
+          ].map(([key, label]) => (
+            <label key={key} className="flex flex-col gap-1 rounded border border-slate-200 bg-white p-2">
+              <span className="text-[11px] text-slate-600">{label}</span>
+              <input
+                type="number"
+                step={key === "supportToPromoteOverripe" ? 1 : 0.001}
+                value={maturityUi[key]}
+                onChange={(e) => setThresholdValue(key, e.target.value)}
+                className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={resetMaturityThresholds}
+            className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Restaurar valores por defecto
+          </button>
+        </div>
+      </details>
 
       {loading && (
         <p className="text-sm text-slate-500">
@@ -384,15 +616,38 @@ export default function AdvancedMode() {
                     visualization={selectedVisualization}
                     bands={statsCube?.bands ?? null}
                     empty={cubes.length === 0}
+                    onComputedStats={setComputedIndexStats}
                   />
                 </div>
                 {cubes.length > 0 && (
-                <div className="mt-4 flex items-center gap-2">
-                  <span className="text-xs text-slate-500">Escala</span>
-                  <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-red-500 via-yellow-300 to-emerald-500" />
-                  <span className="text-[11px] text-slate-500">-1.0</span>
-                  <span className="text-[11px] text-slate-500">0.0</span>
-                  <span className="text-[11px] text-slate-500">+1.0</span>
+                <div className="mt-4 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Escala</span>
+                    <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-red-500 via-yellow-300 to-emerald-500" />
+                    {COMPUTED_INDEX_KEYS.has(selectedVisualization) &&
+                    (selectedVisualization === "CI_re" ||
+                      selectedVisualization === "SIPI") ? (
+                      <>
+                        <span className="text-[11px] text-slate-500">mín</span>
+                        <span className="text-[11px] text-slate-500">med</span>
+                        <span className="text-[11px] text-slate-500">máx</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-[11px] text-slate-500">-1.0</span>
+                        <span className="text-[11px] text-slate-500">0.0</span>
+                        <span className="text-[11px] text-slate-500">+1.0</span>
+                      </>
+                    )}
+                  </div>
+                  {COMPUTED_INDEX_KEYS.has(selectedVisualization) &&
+                  (selectedVisualization === "CI_re" ||
+                    selectedVisualization === "SIPI") ? (
+                    <p className="text-[10px] text-slate-500">
+                      Colormap lineal del mínimo al máximo de esta imagen (cada
+                      escena).
+                    </p>
+                  ) : null}
                 </div>
                 )}
               </div>
@@ -403,34 +658,45 @@ export default function AdvancedMode() {
                     Resumen del índice
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
-                    {statsCube?.bands?.ndvi
-                      ? "Estadísticas calculadas en el cliente al generar el NDVI."
-                      : "Valores simulados salvo que el cube tenga NDVI calculado."}
+                    {COMPUTED_INDEX_KEYS.has(selectedVisualization)
+                      ? "Estadísticas del mapa calculado en el navegador desde las bandas del cube."
+                      : statsCube?.bands?.ndvi
+                        ? "Estadísticas calculadas en el cliente al generar el NDVI."
+                        : "Valores del cube guardado o simulados si no hay NDVI en datos."}
                   </p>
                 </div>
                 <dl className="space-y-2 text-xs text-slate-600">
                   <div className="flex justify-between">
                     <dt>Media</dt>
                     <dd>
-                      {statsCube?.stats?.mean != null
-                        ? statsCube.stats.mean.toFixed(2)
-                        : "—"}
+                      {COMPUTED_INDEX_KEYS.has(selectedVisualization) &&
+                      computedIndexStats
+                        ? computedIndexStats.mean.toFixed(3)
+                        : statsCube?.stats?.mean != null
+                          ? statsCube.stats.mean.toFixed(2)
+                          : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt>Mínimo</dt>
                     <dd>
-                      {statsCube?.stats?.min != null
-                        ? statsCube.stats.min.toFixed(2)
-                        : "—"}
+                      {COMPUTED_INDEX_KEYS.has(selectedVisualization) &&
+                      computedIndexStats
+                        ? computedIndexStats.min.toFixed(3)
+                        : statsCube?.stats?.min != null
+                          ? statsCube.stats.min.toFixed(2)
+                          : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt>Máximo</dt>
                     <dd>
-                      {statsCube?.stats?.max != null
-                        ? statsCube.stats.max.toFixed(2)
-                        : "—"}
+                      {COMPUTED_INDEX_KEYS.has(selectedVisualization) &&
+                      computedIndexStats
+                        ? computedIndexStats.max.toFixed(3)
+                        : statsCube?.stats?.max != null
+                          ? statsCube.stats.max.toFixed(2)
+                          : "—"}
                     </dd>
                   </div>
                 </dl>

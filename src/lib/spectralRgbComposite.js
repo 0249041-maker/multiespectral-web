@@ -7,9 +7,9 @@
 const EPS = 1e-9;
 
 /** Tamaño máximo del lado en la correlación (velocidad vs precisión). */
-const ALIGN_PREVIEW_MAX = 160;
+const ALIGN_PREVIEW_MAX = 224;
 /** Búsqueda de desplazamiento en píxeles (imagen reducida). */
-const ALIGN_MAX_SHIFT = 28;
+const ALIGN_MAX_SHIFT = 72;
 
 function luminanceFromRgba(r, g, b) {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
@@ -19,7 +19,7 @@ function luminanceFromRgba(r, g, b) {
  * @param {string} url
  * @returns {Promise<HTMLImageElement>}
  */
-function loadImageCrossOrigin(url) {
+export function loadImageCrossOrigin(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     if (!url.startsWith("blob:") && !url.startsWith("data:")) {
@@ -38,7 +38,7 @@ function loadImageCrossOrigin(url) {
  * @param {number} th
  * @returns {ImageData}
  */
-function drawToImageData(img, tw, th) {
+export function drawToImageData(img, tw, th) {
   const c = document.createElement("canvas");
   c.width = tw;
   c.height = th;
@@ -52,7 +52,7 @@ function drawToImageData(img, tw, th) {
  * @param {ImageData} imageData
  * @returns {Float32Array}
  */
-function imageDataToLuminance(imageData) {
+export function imageDataToLuminance(imageData) {
   const { data } = imageData;
   const n = data.length / 4;
   const out = new Float32Array(n);
@@ -64,11 +64,30 @@ function imageDataToLuminance(imageData) {
 }
 
 /**
+ * Realza contornos para registrar mejor entre bandas con brillo distinto.
+ * @param {Float32Array} lum
+ * @param {number} w
+ * @param {number} h
+ */
+export function edgeMap(lum, w, h) {
+  const out = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const gx = lum[i + 1] - lum[i - 1];
+      const gy = lum[i + w] - lum[i - w];
+      out[i] = Math.sqrt(gx * gx + gy * gy);
+    }
+  }
+  return out;
+}
+
+/**
  * @param {HTMLImageElement} img
  * @param {number} maxSide
  * @returns {{ lum: Float32Array; sw: number; sh: number }}
  */
-function luminanceDownscaled(img, maxSide) {
+export function luminanceDownscaled(img, maxSide) {
   let tw = img.width;
   let th = img.height;
   const scale = Math.min(1, maxSide / Math.max(tw, th));
@@ -87,7 +106,7 @@ function luminanceDownscaled(img, maxSide) {
  * @param {number} maxShift
  * @returns {{ dx: number; dy: number }}
  */
-function findBestTranslation(ref, mov, sw, sh, maxShift) {
+export function findBestTranslation(ref, mov, sw, sh, maxShift) {
   const n = sw * sh;
   let meanR = 0;
   let meanM = 0;
@@ -153,7 +172,7 @@ function findBestTranslation(ref, mov, sw, sh, maxShift) {
  * @param {number} dx
  * @param {number} dy
  */
-function applyShiftFloat32(arr, w, h, dx, dy) {
+export function applyShiftFloat32(arr, w, h, dx, dy) {
   const out = new Float32Array(w * h);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -171,7 +190,7 @@ function applyShiftFloat32(arr, w, h, dx, dy) {
  * @param {Float32Array} arr
  * @returns {Float32Array}
  */
-function normalizeMinMax(arr) {
+export function normalizeMinMax(arr) {
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < arr.length; i++) {
@@ -189,12 +208,289 @@ function normalizeMinMax(arr) {
 }
 
 /**
- * Genera un PNG compuesto RGB con bandas alineadas a R.
+ * Estirado robusto por percentiles para evitar imágenes oscuras por outliers.
+ * @param {Float32Array} arr
+ * @param {number} lowQ
+ * @param {number} highQ
+ * @returns {Float32Array}
+ */
+export function normalizeRobust(arr, lowQ = 0.01, highQ = 0.99) {
+  const n = arr.length;
+  if (n === 0) return new Float32Array(0);
+  const sampleTarget = Math.min(50000, n);
+  const stride = Math.max(1, Math.floor(n / sampleTarget));
+  const sample = [];
+  for (let i = 0; i < n; i += stride) {
+    sample.push(arr[i]);
+  }
+  sample.sort((a, b) => a - b);
+  const loIdx = Math.max(0, Math.min(sample.length - 1, Math.floor((sample.length - 1) * lowQ)));
+  const hiIdx = Math.max(0, Math.min(sample.length - 1, Math.floor((sample.length - 1) * highQ)));
+  const lo = sample[loIdx];
+  const hi = sample[hiIdx];
+  const range = hi - lo;
+  if (range < EPS * 10) {
+    return normalizeMinMax(arr);
+  }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = (arr[i] - lo) / range;
+    out[i] = Math.max(0, Math.min(1, t));
+  }
+  return out;
+}
+
+/**
+ * Balance de blancos simple (gray-world) para evitar dominantes en RGB natural.
+ * @param {Float32Array} r
+ * @param {Float32Array} g
+ * @param {Float32Array} b
+ * @returns {{ r: Float32Array; g: Float32Array; b: Float32Array }}
+ */
+function balanceRgbChannels(r, g, b) {
+  const n = r.length;
+  if (!n || g.length !== n || b.length !== n) return { r, g, b };
+
+  let meanR = 0;
+  let meanG = 0;
+  let meanB = 0;
+  for (let i = 0; i < n; i++) {
+    meanR += r[i];
+    meanG += g[i];
+    meanB += b[i];
+  }
+  meanR /= n;
+  meanG /= n;
+  meanB /= n;
+  const target = (meanR + meanG + meanB) / 3;
+  const clampGain = (x) => Math.max(0.72, Math.min(1.38, x));
+  const gainR = clampGain(target / (meanR + EPS));
+  const gainG = clampGain(target / (meanG + EPS));
+  const gainB = clampGain(target / (meanB + EPS));
+
+  const outR = new Float32Array(n);
+  const outG = new Float32Array(n);
+  const outB = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    outR[i] = Math.max(0, Math.min(1, r[i] * gainR));
+    outG[i] = Math.max(0, Math.min(1, g[i] * gainG));
+    outB[i] = Math.max(0, Math.min(1, b[i] * gainB));
+  }
+  return { r: outR, g: outG, b: outB };
+}
+
+/**
+ * Compensa exposición global para evitar RGB muy oscuro.
+ * @param {Float32Array} r
+ * @param {Float32Array} g
+ * @param {Float32Array} b
+ * @param {number} targetLum
+ * @returns {{ r: Float32Array; g: Float32Array; b: Float32Array }}
+ */
+function autoExposeRgb(r, g, b, targetLum = 0.46) {
+  const n = r.length;
+  if (!n || g.length !== n || b.length !== n) return { r, g, b };
+  let meanLum = 0;
+  const sample = [];
+  const stride = Math.max(1, Math.floor(n / 40000));
+  for (let i = 0; i < n; i++) {
+    const lum = 0.2126 * r[i] + 0.7152 * g[i] + 0.0722 * b[i];
+    meanLum += lum;
+    if (i % stride === 0) sample.push(lum);
+  }
+  meanLum /= n;
+  sample.sort((a, b) => a - b);
+  const p = (q) =>
+    sample[
+      Math.max(0, Math.min(sample.length - 1, Math.floor((sample.length - 1) * q)))
+    ];
+  const p50 = sample.length ? p(0.5) : meanLum;
+  const p85 = sample.length ? p(0.85) : meanLum;
+
+  // Control robusto: sube sombras/medios, protege altas luces.
+  const gainMean = targetLum / (meanLum + EPS);
+  const gainMid = 0.5 / (p50 + EPS);
+  const hiGuard = 0.93 / (p85 + EPS);
+  const rawGain = Math.min(Math.max(gainMean, gainMid), hiGuard * 1.12);
+  const gain = Math.max(0.9, Math.min(1.75, rawGain));
+  if (Math.abs(gain - 1) < 0.03) return { r, g, b };
+  const outR = new Float32Array(n);
+  const outG = new Float32Array(n);
+  const outB = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    outR[i] = Math.max(0, Math.min(1, r[i] * gain));
+    outG[i] = Math.max(0, Math.min(1, g[i] * gain));
+    outB[i] = Math.max(0, Math.min(1, b[i] * gain));
+  }
+  return { r: outR, g: outG, b: outB };
+}
+
+/**
+ * @param {HTMLImageElement} imgR
+ * @param {number} w
+ * @param {number} h
+ * @returns {(img: HTMLImageElement) => { dx: number; dy: number }}
+ */
+function makeAlignToRef(imgR, w, h) {
+  const refSmall = luminanceDownscaled(imgR, ALIGN_PREVIEW_MAX);
+  return function alignToRef(img) {
+    const { sw, sh } = refSmall;
+    const movLum = imageDataToLuminance(drawToImageData(img, sw, sh));
+    const refEdges = edgeMap(refSmall.lum, sw, sh);
+    const movEdges = edgeMap(movLum, sw, sh);
+    const maxShift = Math.min(
+      ALIGN_MAX_SHIFT,
+      Math.max(4, Math.floor(Math.min(sw, sh) / 2) - 2)
+    );
+    const { dx, dy } = findBestTranslation(
+      refEdges,
+      movEdges,
+      sw,
+      sh,
+      maxShift
+    );
+    const scaleX = w / sw;
+    const scaleY = h / sh;
+    const dxFull = Math.round(dx * scaleX);
+    const dyFull = Math.round(dy * scaleY);
+    return { dx: dxFull, dy: dyFull };
+  };
+}
+
+/**
+ * Alinea otras bandas respecto a una imagen de referencia arbitraria (p. ej. G para GNDVI, RE para CIre).
+ * @param {HTMLImageElement} refImg
+ * @returns {(mov: HTMLImageElement) => { dx: number; dy: number }}
+ */
+export function createAlignerForReferenceImage(refImg) {
+  const w = refImg.width;
+  const h = refImg.height;
+  return makeAlignToRef(refImg, w, h);
+}
+
+function assertSameDimensions(label, img, w, h) {
+  if (img.width !== w || img.height !== h) {
+    throw new Error(
+      `Las dimensiones de la banda ${label} (${img.width}×${img.height}) no coinciden con R (${w}×${h}).`
+    );
+  }
+}
+
+/**
+ * Reflectancia aproximada por canal (luminancia / 255), alineada a R.
+ * Requiere las 5 URLs (R, G, B, RE, NIR).
+ *
+ * @param {{ r: string; g: string; b: string; re: string; nir: string }} bandUrls
+ * @returns {Promise<{ w: number; h: number; R: Float32Array; G: Float32Array; B: Float32Array; RE: Float32Array; NIR: Float32Array }>}
+ */
+export async function computeFiveBandAlignedReflectance(bandUrls) {
+  const { r, g, b, re, nir } = bandUrls;
+  if (!r || !g || !b || !re || !nir) {
+    throw new Error("Se requieren las cinco bandas (R, G, B, RE, NIR).");
+  }
+  const [imgR, imgG, imgB, imgRe, imgNir] = await Promise.all([
+    loadImageCrossOrigin(r),
+    loadImageCrossOrigin(g),
+    loadImageCrossOrigin(b),
+    loadImageCrossOrigin(re),
+    loadImageCrossOrigin(nir),
+  ]);
+  const w = imgR.width;
+  const h = imgR.height;
+  assertSameDimensions("G", imgG, w, h);
+  assertSameDimensions("B", imgB, w, h);
+  assertSameDimensions("RE", imgRe, w, h);
+  assertSameDimensions("NIR", imgNir, w, h);
+
+  const dataR = imageDataToLuminance(drawToImageData(imgR, w, h));
+  const dataG0 = imageDataToLuminance(drawToImageData(imgG, w, h));
+  const dataB0 = imageDataToLuminance(drawToImageData(imgB, w, h));
+  const dataRe0 = imageDataToLuminance(drawToImageData(imgRe, w, h));
+  const dataNir0 = imageDataToLuminance(drawToImageData(imgNir, w, h));
+
+  const alignToRef = makeAlignToRef(imgR, w, h);
+  const shiftG = alignToRef(imgG);
+  const shiftB = alignToRef(imgB);
+  const shiftRe = alignToRef(imgRe);
+  const shiftNir = alignToRef(imgNir);
+
+  const dataG = applyShiftFloat32(dataG0, w, h, shiftG.dx, shiftG.dy);
+  const dataB = applyShiftFloat32(dataB0, w, h, shiftB.dx, shiftB.dy);
+  const dataRe = applyShiftFloat32(dataRe0, w, h, shiftRe.dx, shiftRe.dy);
+  const dataNir = applyShiftFloat32(dataNir0, w, h, shiftNir.dx, shiftNir.dy);
+
+  const n = w * h;
+  const R = new Float32Array(n);
+  const G = new Float32Array(n);
+  const B = new Float32Array(n);
+  const RE = new Float32Array(n);
+  const NIR = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    R[i] = dataR[i] / 255;
+    G[i] = dataG[i] / 255;
+    B[i] = dataB[i] / 255;
+    RE[i] = dataRe[i] / 255;
+    NIR[i] = dataNir[i] / 255;
+  }
+  return { w, h, R, G, B, RE, NIR };
+}
+
+/**
+ * R, G, B como reflectancia ~0..1 alineadas a la banda R.
+ *
+ * @param {{ r: string; g: string; b: string }} bandUrls
+ * @returns {Promise<{ w: number; h: number; R: Float32Array; G: Float32Array; B: Float32Array }>}
+ */
+export async function computeThreeBandAlignedReflectance(bandUrls) {
+  const { r, g, b } = bandUrls;
+  if (!r || !g || !b) {
+    throw new Error("Se requieren las bandas R, G y B.");
+  }
+  const [imgR, imgG, imgB] = await Promise.all([
+    loadImageCrossOrigin(r),
+    loadImageCrossOrigin(g),
+    loadImageCrossOrigin(b),
+  ]);
+  const w = imgR.width;
+  const h = imgR.height;
+  assertSameDimensions("G", imgG, w, h);
+  assertSameDimensions("B", imgB, w, h);
+
+  const dataR = imageDataToLuminance(drawToImageData(imgR, w, h));
+  const dataG0 = imageDataToLuminance(drawToImageData(imgG, w, h));
+  const dataB0 = imageDataToLuminance(drawToImageData(imgB, w, h));
+
+  const alignToRef = makeAlignToRef(imgR, w, h);
+  const shiftG = alignToRef(imgG);
+  const shiftB = alignToRef(imgB);
+  const dataG = applyShiftFloat32(dataG0, w, h, shiftG.dx, shiftG.dy);
+  const dataB = applyShiftFloat32(dataB0, w, h, shiftB.dx, shiftB.dy);
+
+  const n = w * h;
+  const R = new Float32Array(n);
+  const G = new Float32Array(n);
+  const B = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    R[i] = dataR[i] / 255;
+    G[i] = dataG[i] / 255;
+    B[i] = dataB[i] / 255;
+  }
+  return { w, h, R, G, B };
+}
+
+/**
+ * Genera un PNG RGB con bandas alineadas a R.
+ * - mode="natural": R,G,B directos (estirados).
+ * - mode="multispectral": mezcla NIR+R+RE en canal rojo si hay 5 bandas.
  *
  * @param {{ r: string; g: string; b: string; re?: string | null; nir?: string | null }} bandUrls
+ * @param {{ mode?: "natural" | "multispectral"; upscaleFactor?: number; gamma?: number }} [options]
  * @returns {Promise<Blob>}
  */
-export async function buildSpectralRgbCompositeBlob(bandUrls) {
+export async function buildSpectralRgbCompositeBlob(bandUrls, options = {}) {
+  const mode = options.mode ?? "multispectral";
+  const upscaleFactor = Math.max(1, Math.min(3, options.upscaleFactor ?? 2));
+  const gamma = Math.max(0.65, Math.min(1.35, options.gamma ?? 0.82));
   const { r, g, b, re, nir } = bandUrls;
   if (!r || !g || !b) {
     throw new Error("Se requieren las bandas R, G y B.");
@@ -217,28 +513,7 @@ export async function buildSpectralRgbCompositeBlob(bandUrls) {
   const dataG0 = imageDataToLuminance(drawToImageData(imgG, w, h));
   const dataB0 = imageDataToLuminance(drawToImageData(imgB, w, h));
 
-  const refSmall = luminanceDownscaled(imgR, ALIGN_PREVIEW_MAX);
-
-  function alignToRef(img) {
-    const { sw, sh } = refSmall;
-    const movLum = imageDataToLuminance(drawToImageData(img, sw, sh));
-    const maxShift = Math.min(
-      ALIGN_MAX_SHIFT,
-      Math.floor(Math.min(sw, sh) / 5)
-    );
-    const { dx, dy } = findBestTranslation(
-      refSmall.lum,
-      movLum,
-      sw,
-      sh,
-      maxShift
-    );
-    const scaleX = w / sw;
-    const scaleY = h / sh;
-    const dxFull = Math.round(dx * scaleX);
-    const dyFull = Math.round(dy * scaleY);
-    return { dx: dxFull, dy: dyFull };
-  }
+  const alignToRef = makeAlignToRef(imgR, w, h);
 
   const shiftG = alignToRef(imgG);
   const shiftB = alignToRef(imgB);
@@ -246,21 +521,23 @@ export async function buildSpectralRgbCompositeBlob(bandUrls) {
   let dataG = applyShiftFloat32(dataG0, w, h, shiftG.dx, shiftG.dy);
   let dataB = applyShiftFloat32(dataB0, w, h, shiftB.dx, shiftB.dy);
 
-  const rN = normalizeMinMax(dataR);
-  let gN = normalizeMinMax(dataG);
-  let bN = normalizeMinMax(dataB);
+  const rN = normalizeRobust(dataR);
+  let gN = normalizeRobust(dataG);
+  let bN = normalizeRobust(dataB);
 
   let outR;
 
-  if (hasFive && imgRe && imgNir) {
+  if (mode === "multispectral" && hasFive && imgRe && imgNir) {
+    assertSameDimensions("RE", imgRe, w, h);
+    assertSameDimensions("NIR", imgNir, w, h);
     const dataRe0 = imageDataToLuminance(drawToImageData(imgRe, w, h));
     const dataNir0 = imageDataToLuminance(drawToImageData(imgNir, w, h));
     const shiftRe = alignToRef(imgRe);
     const shiftNir = alignToRef(imgNir);
     const dataRe = applyShiftFloat32(dataRe0, w, h, shiftRe.dx, shiftRe.dy);
     const dataNir = applyShiftFloat32(dataNir0, w, h, shiftNir.dx, shiftNir.dy);
-    const reN = normalizeMinMax(dataRe);
-    const nirN = normalizeMinMax(dataNir);
+    const reN = normalizeRobust(dataRe);
+    const nirN = normalizeRobust(dataNir);
     const n = rN.length;
     outR = new Float32Array(n);
     const wNir = 0.45;
@@ -271,6 +548,15 @@ export async function buildSpectralRgbCompositeBlob(bandUrls) {
     }
   } else {
     outR = rN;
+  }
+
+  // RGB natural: corregimos dominante de color tras la normalización por banda.
+  if (mode === "natural") {
+    const balanced = balanceRgbChannels(outR, gN, bN);
+    const exposed = autoExposeRgb(balanced.r, balanced.g, balanced.b, 0.47);
+    outR = exposed.r;
+    gN = exposed.g;
+    bN = exposed.b;
   }
 
   const canvas = document.createElement("canvas");
@@ -284,9 +570,9 @@ export async function buildSpectralRgbCompositeBlob(bandUrls) {
 
   for (let i = 0; i < n; i++) {
     const o = i * 4;
-    const rr = Math.round(Math.min(255, Math.max(0, outR[i] * 255)));
-    const gg = Math.round(Math.min(255, Math.max(0, gN[i] * 255)));
-    const bb = Math.round(Math.min(255, Math.max(0, bN[i] * 255)));
+    const rr = Math.round(Math.min(255, Math.max(0, Math.pow(outR[i], gamma) * 255)));
+    const gg = Math.round(Math.min(255, Math.max(0, Math.pow(gN[i], gamma) * 255)));
+    const bb = Math.round(Math.min(255, Math.max(0, Math.pow(bN[i], gamma) * 255)));
     d[o] = rr;
     d[o + 1] = gg;
     d[o + 2] = bb;
@@ -295,8 +581,17 @@ export async function buildSpectralRgbCompositeBlob(bandUrls) {
 
   ctx.putImageData(imgOut, 0, 0);
 
+  const targetCanvas = document.createElement("canvas");
+  targetCanvas.width = Math.max(1, Math.round(w * upscaleFactor));
+  targetCanvas.height = Math.max(1, Math.round(h * upscaleFactor));
+  const targetCtx = targetCanvas.getContext("2d");
+  if (!targetCtx) throw new Error("Canvas 2D no disponible.");
+  targetCtx.imageSmoothingEnabled = true;
+  targetCtx.imageSmoothingQuality = "high";
+  targetCtx.drawImage(canvas, 0, 0, targetCanvas.width, targetCanvas.height);
+
   const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob(
+    targetCanvas.toBlob(
       (bl) => {
         if (bl) resolve(bl);
         else reject(new Error("No se pudo generar el PNG RGB compuesto."));

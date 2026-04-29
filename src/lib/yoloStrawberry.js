@@ -107,7 +107,7 @@ function clamp(v, lo, hi) {
  * Interpreta salidas típicas de YOLOv8/v11 exportado con Ultralytics `nms=True`.
  * Formas comunes: [1, N, 6] o [1, 6, N] con x1,y1,x2,y2,conf,cls (coords en espacio entrada 640).
  */
-function parseNmsEmbeddedOutput(tensor, confThreshold) {
+function parseNmsEmbeddedOutput(tensor, confThreshold, iouThreshold = 0.45) {
   const data = tensor.data;
   const dims = tensor.dims;
   if (dims.length !== 3) return [];
@@ -148,7 +148,7 @@ function parseNmsEmbeddedOutput(tensor, confThreshold) {
     return [];
   }
 
-  return nms(rows, 0.45);
+  return nms(rows, iouThreshold);
 }
 
 function isLikelyRawYoloHead(d1, d2) {
@@ -157,7 +157,7 @@ function isLikelyRawYoloHead(d1, d2) {
   return large > 2000 && small >= 4 && small <= 100;
 }
 
-function parseOutputToBoxes(output, confThreshold) {
+function parseOutputToBoxes(output, confThreshold, iouThreshold = 0.45) {
   const dims = output.dims;
   if (dims.length === 3 && dims[0] === 1) {
     const d1 = dims[1];
@@ -168,7 +168,7 @@ function parseOutputToBoxes(output, confThreshold) {
       );
     }
   }
-  const boxes = parseNmsEmbeddedOutput(output, confThreshold);
+  const boxes = parseNmsEmbeddedOutput(output, confThreshold, iouThreshold);
   return boxes;
 }
 
@@ -204,10 +204,11 @@ export function getOrCreateSession(modelUrl) {
 /**
  * @param {import('onnxruntime-web').InferenceSession} session
  * @param {Float32Array} tensorData NCHW 1x3x640x640
- * @param {{ confThreshold?: number }} opts
+ * @param {{ confThreshold?: number, iouThreshold?: number }} opts
  */
 export async function runStrawberryInference(session, tensorData, opts = {}) {
   const confThreshold = opts.confThreshold ?? 0.25;
+  const iouThreshold = opts.iouThreshold ?? 0.45;
   const inputName = session.inputNames[0];
   const tensor = new ort.Tensor("float32", tensorData, [1, 3, INPUT_SIZE, INPUT_SIZE]);
   const feeds = { [inputName]: tensor };
@@ -223,7 +224,7 @@ export async function runStrawberryInference(session, tensorData, opts = {}) {
     const output = results[outName];
     if (!output) continue;
     try {
-      return parseOutputToBoxes(output, confThreshold);
+      return parseOutputToBoxes(output, confThreshold, iouThreshold);
     } catch (e) {
       lastThrow = e instanceof Error ? e : new Error(String(e));
     }
