@@ -1,4 +1,5 @@
 import { useStrawberryDetection } from "@/context/StrawberryDetectionContext";
+import { getMaturityThresholds } from "@/lib/strawberryMaturity";
 import { useDashboardData } from "@/state/useDashboardData";
 
 function StatCard({ title, subtitle, value, detail }) {
@@ -34,6 +35,20 @@ function countByMaturity(fruitBoxes) {
   return acc;
 }
 
+/** Inmaduros con mayoría roja en VARI (redCoverage) pero clase ≠ madura: casi listos. */
+function countAlmostRipeNotYetMadura(fruitBoxes) {
+  const minRed = getMaturityThresholds().redCoverageForMaduraMin;
+  let n = 0;
+  for (const b of fruitBoxes) {
+    if (b.maturity !== "inmadura") continue;
+    const rc = b.indices?.redCoverage;
+    if (typeof rc === "number" && Number.isFinite(rc) && rc >= minRed) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
 export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
   const { data, loading, error, warning } = useDashboardData();
   const {
@@ -66,6 +81,24 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
   const maturityCounts =
     detectionMatchesCube && hasMaturity ? countByMaturity(fruitBoxes) : null;
   const showZeros = detectionMatchesCube && hasBoxes && !hasMaturity;
+  const useCubeHarvestCards =
+    Boolean(detectionMatchesCube && hasMaturity && maturityCounts);
+  const cubeMaduros = useCubeHarvestCards ? maturityCounts.madura : null;
+  const cubePorMadurar = useCubeHarvestCards
+    ? countAlmostRipeNotYetMadura(fruitBoxes)
+    : null;
+  const personsToday01 =
+    useCubeHarvestCards && cubeMaduros != null
+      ? cubeMaduros > 0
+        ? 1
+        : 0
+      : null;
+  const personsTomorrow01 =
+    useCubeHarvestCards && cubePorMadurar != null
+      ? cubePorMadurar > 0
+        ? 1
+        : 0
+      : null;
 
   let maturityRowHint = null;
   if (!selectedId) {
@@ -244,24 +277,62 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
         <StatCard
           title="Predicción de maduración"
           subtitle="Hoy"
-          value={`${todayPrediction.fruits} frutos`}
-          detail={`${todayPrediction.percentage}% del total estimado`}
+          value={
+            cubeMaduros != null
+              ? `${cubeMaduros} frutos`
+              : `${todayPrediction.fruits} frutos`
+          }
+          detail={
+            cubeMaduros != null
+              ? "Frutos clasificados como maduros (cube seleccionado)."
+              : `${todayPrediction.percentage}% del total estimado`
+          }
         />
         <StatCard
           title="Predicción de maduración"
           subtitle="Mañana"
-          value={`${tomorrowPrediction.fruits} frutos`}
-          detail={`${tomorrowPrediction.percentage}% del total estimado`}
+          value={
+            cubePorMadurar != null
+              ? `${cubePorMadurar} frutos`
+              : `${tomorrowPrediction.fruits} frutos`
+          }
+          detail={
+            cubePorMadurar != null
+              ? "Inmaduros con mayoría roja en VARI, aún no maduros."
+              : `${tomorrowPrediction.percentage}% del total estimado`
+          }
         />
         <StatCard
           title="Personas para recolectar"
           subtitle="Hoy"
-          value={`${todayWorkers} personas`}
+          value={
+            personsToday01 != null
+              ? String(personsToday01)
+              : `${todayWorkers} personas`
+          }
+          detail={
+            personsToday01 != null
+              ? personsToday01 === 1
+                ? "Hay frutos maduros en el cube (indicador 1/0)."
+                : "Sin frutos maduros en el cube (indicador 1/0)."
+              : false
+          }
         />
         <StatCard
           title="Personas para recolectar"
           subtitle="Mañana"
-          value={`${tomorrowWorkers} personas`}
+          value={
+            personsTomorrow01 != null
+              ? String(personsTomorrow01)
+              : `${tomorrowWorkers} personas`
+          }
+          detail={
+            personsTomorrow01 != null
+              ? personsTomorrow01 === 1
+                ? "Hay frutos por madurar pronto (indicador 1/0)."
+                : "Sin frutos en ese umbral (indicador 1/0)."
+              : false
+          }
         />
       </div>
 

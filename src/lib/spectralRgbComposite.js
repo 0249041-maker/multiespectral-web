@@ -6,10 +6,16 @@
 
 const EPS = 1e-9;
 
-/** Tamaño máximo del lado en la correlación (velocidad vs precisión). */
-const ALIGN_PREVIEW_MAX = 224;
-/** Búsqueda de desplazamiento en píxeles (imagen reducida). */
-const ALIGN_MAX_SHIFT = 72;
+/** Miniatura fina para correlación (más detalle = menos ambigüedad). */
+const ALIGN_FINE_MAX = 384;
+/** Miniatura gruesa para acotar desplazamientos grandes (px del lado). */
+const ALIGN_COARSE_MAX = 112;
+/** Ventana de búsqueda en la miniatura gruesa (puede cubrir ~40% del lado). */
+const ALIGN_COARSE_MAX_SHIFT = 56;
+/** Refinamiento alrededor de la estimación gruesa (en píxeles de la miniatura fina). */
+const ALIGN_FINE_HALF_WINDOW = 52;
+/** Tope de ventana completa en miniatura fina si no hay paso grueso. */
+const ALIGN_FINE_FULL_MAX_SHIFT = 96;
 
 function luminanceFromRgba(r, g, b) {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
@@ -162,6 +168,238 @@ export function findBestTranslation(ref, mov, sw, sh, maxShift) {
   }
 
   return { dx: bestDx, dy: bestDy };
+}
+
+/**
+ * Estadísticas globales para NCC (misma convención que findBestTranslation).
+ * @param {Float32Array} ref
+ * @param {Float32Array} mov
+ * @param {number} n
+ */
+function nccGlobalStats(ref, mov, n) {
+  let meanR = 0;
+  let meanM = 0;
+  for (let i = 0; i < n; i++) {
+    meanR += ref[i];
+    meanM += mov[i];
+  }
+  meanR /= n;
+  meanM /= n;
+  let varR = 0;
+  let varM = 0;
+  for (let i = 0; i < n; i++) {
+    const dr = ref[i] - meanR;
+    const dm = mov[i] - meanM;
+    varR += dr * dr;
+    varM += dm * dm;
+  }
+  const stdR = Math.sqrt(varR / n) + EPS;
+  const stdM = Math.sqrt(varM / n) + EPS;
+  return { meanR, meanM, stdR, stdM };
+}
+
+/**
+ * NCC medio en un desplazamiento (ref vs mov desplazado).
+ */
+function nccAtShift(
+  ref,
+  mov,
+  sw,
+  sh,
+  dx,
+  dy,
+  meanR,
+  stdR,
+  meanM,
+  stdM,
+  stride
+) {
+  let sum = 0;
+  let count = 0;
+  for (let y = 0; y < sh; y += stride) {
+    const ys = y + dy;
+    if (ys < 0 || ys >= sh) continue;
+    for (let x = 0; x < sw; x += stride) {
+      const xs = x + dx;
+      if (xs < 0 || xs >= sw) continue;
+      const ir = y * sw + x;
+      const im = ys * sw + xs;
+      const vr = (ref[ir] - meanR) / stdR;
+      const vm = (mov[im] - meanM) / stdM;
+      sum += vr * vm;
+      count++;
+    }
+  }
+  if (count === 0) return -Infinity;
+  return sum / count;
+}
+
+const W_NCC_EDGE = 0.52;
+const W_NCC_LUM = 0.48;
+
+/**
+ * Correlación cruzada normalizada combinando bordes y luminancia (menos fallos en zonas uniformes).
+ * @param {{ type: "full"; maxShift: number } | { type: "window"; cx: number; cy: number; half: number }} range
+ */
+function findBestTranslationDual(refEdge, movEdge, refLum, movLum, sw, sh, range) {
+  const n = sw * sh;
+  const stE = nccGlobalStats(refEdge, movEdge, n);
+  const stL = nccGlobalStats(refLum, movLum, n);
+  const stride = sw > 120 || sh > 120 ? 2 : 1;
+
+  let loDx;
+  let hiDx;
+  let loDy;
+  let hiDy;
+  if (range.type === "full") {
+    const m = range.maxShift;
+    loDx = -m;
+    hiDx = m;
+    loDy = -m;
+    hiDy = m;
+  } else {
+    loDx = range.cx - range.half;
+    hiDx = range.cx + range.half;
+    loDy = range.cy - range.half;
+    hiDy = range.cy + range.half;
+  }
+
+  let bestScore = -Infinity;
+  let bestDx = 0;
+  let bestDy = 0;
+
+  for (let dy = loDy; dy <= hiDy; dy++) {
+    for (let dx = loDx; dx <= hiDx; dx++) {
+      const sE = nccAtShift(
+        refEdge,
+        movEdge,
+        sw,
+        sh,
+        dx,
+        dy,
+        stE.meanR,
+        stE.stdR,
+        stE.meanM,
+        stE.stdM,
+        stride
+      );
+      const sL = nccAtShift(
+        refLum,
+        movLum,
+        sw,
+        sh,
+        dx,
+        dy,
+        stL.meanR,
+        stL.stdR,
+        stL.meanM,
+        stL.stdM,
+        stride
+      );
+      if (!Number.isFinite(sE) || !Number.isFinite(sL)) continue;
+      const score = W_NCC_EDGE * sE + W_NCC_LUM * sL;
+      if (score > bestScore) {
+        bestScore = score;
+        bestDx = dx;
+        bestDy = dy;
+      }
+    }
+  }
+  return { dx: bestDx, dy: bestDy };
+}
+
+/**
+ * Desplazamiento mov→ref en píxeles de imagen completa (correlación gruesa + refinamiento fino).
+ */
+function computeBandShiftVsRef(refImg, movImg, fullW, fullH) {
+  const refFine = luminanceDownscaled(refImg, ALIGN_FINE_MAX);
+  const { sw: swF, sh: shF, lum: lumRF } = refFine;
+  const movLumF = imageDataToLuminance(drawToImageData(movImg, swF, shF));
+  const refEdgeF = edgeMap(lumRF, swF, shF);
+  const movEdgeF = edgeMap(movLumF, swF, shF);
+
+  const useCoarse = Math.max(fullW, fullH) > ALIGN_COARSE_MAX * 1.2;
+
+  let dxF;
+  let dyF;
+
+  if (useCoarse) {
+    const refC = luminanceDownscaled(refImg, ALIGN_COARSE_MAX);
+    const { sw: swC, sh: shC, lum: lumRC } = refC;
+    const movLumC = imageDataToLuminance(drawToImageData(movImg, swC, shC));
+    const refEdgeC = edgeMap(lumRC, swC, shC);
+    const movEdgeC = edgeMap(movLumC, swC, shC);
+    const maxShiftC = Math.min(
+      ALIGN_COARSE_MAX_SHIFT,
+      Math.max(6, Math.floor(Math.min(swC, shC) / 2) - 2)
+    );
+    const coarse = findBestTranslationDual(
+      refEdgeC,
+      movEdgeC,
+      lumRC,
+      movLumC,
+      swC,
+      shC,
+      { type: "full", maxShift: maxShiftC }
+    );
+    const cx = Math.round((coarse.dx * swF) / swC);
+    const cy = Math.round((coarse.dy * shF) / shC);
+    let refined = findBestTranslationDual(
+      refEdgeF,
+      movEdgeF,
+      lumRF,
+      movLumF,
+      swF,
+      shF,
+      { type: "window", cx, cy, half: ALIGN_FINE_HALF_WINDOW }
+    );
+    const hw = ALIGN_FINE_HALF_WINDOW;
+    const nearEdge =
+      refined.dx <= cx - hw + 2 ||
+      refined.dx >= cx + hw - 2 ||
+      refined.dy <= cy - hw + 2 ||
+      refined.dy >= cy + hw - 2;
+    if (nearEdge) {
+      const maxShiftF = Math.min(
+        ALIGN_FINE_FULL_MAX_SHIFT,
+        Math.max(4, Math.floor(Math.min(swF, shF) / 2) - 2)
+      );
+      refined = findBestTranslationDual(
+        refEdgeF,
+        movEdgeF,
+        lumRF,
+        movLumF,
+        swF,
+        shF,
+        { type: "full", maxShift: maxShiftF }
+      );
+    }
+    dxF = refined.dx;
+    dyF = refined.dy;
+  } else {
+    const maxShiftF = Math.min(
+      ALIGN_FINE_FULL_MAX_SHIFT,
+      Math.max(4, Math.floor(Math.min(swF, shF) / 2) - 2)
+    );
+    const full = findBestTranslationDual(
+      refEdgeF,
+      movEdgeF,
+      lumRF,
+      movLumF,
+      swF,
+      shF,
+      { type: "full", maxShift: maxShiftF }
+    );
+    dxF = full.dx;
+    dyF = full.dy;
+  }
+
+  const scaleX = fullW / swF;
+  const scaleY = fullH / shF;
+  return {
+    dx: Math.round(dxF * scaleX),
+    dy: Math.round(dyF * scaleY),
+  };
 }
 
 /**
@@ -332,28 +570,8 @@ function autoExposeRgb(r, g, b, targetLum = 0.46) {
  * @returns {(img: HTMLImageElement) => { dx: number; dy: number }}
  */
 function makeAlignToRef(imgR, w, h) {
-  const refSmall = luminanceDownscaled(imgR, ALIGN_PREVIEW_MAX);
   return function alignToRef(img) {
-    const { sw, sh } = refSmall;
-    const movLum = imageDataToLuminance(drawToImageData(img, sw, sh));
-    const refEdges = edgeMap(refSmall.lum, sw, sh);
-    const movEdges = edgeMap(movLum, sw, sh);
-    const maxShift = Math.min(
-      ALIGN_MAX_SHIFT,
-      Math.max(4, Math.floor(Math.min(sw, sh) / 2) - 2)
-    );
-    const { dx, dy } = findBestTranslation(
-      refEdges,
-      movEdges,
-      sw,
-      sh,
-      maxShift
-    );
-    const scaleX = w / sw;
-    const scaleY = h / sh;
-    const dxFull = Math.round(dx * scaleX);
-    const dyFull = Math.round(dy * scaleY);
-    return { dx: dxFull, dy: dyFull };
+    return computeBandShiftVsRef(imgR, img, w, h);
   };
 }
 

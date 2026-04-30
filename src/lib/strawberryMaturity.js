@@ -7,29 +7,33 @@ function minDenomMagnitude(scaleSum) {
 }
 
 // Umbrales calibrables de madurez (ajuste manual en campo).
-// Cambia solo estos valores para afinar madura vs sobremadura.
+//
+// 1) VARI: si en su mayoría los píxeles son “rojos” (no verdes), la base es madura.
+// 2) GNDVI, CIre, SIPI (+ voto VARI fuerte): suben a sobremadura o bajan a inmadura. Sin MTCI.
 export const DEFAULT_MATURITY_THRESHOLDS = {
-  // Regla prioritaria: VARI verde => inmadura.
   variInmaduraMin: 0.015,
-  // Para pasar a madura, exigimos rojo presente en casi toda la fresa.
-  variRedPixelMax: -0.02,
-  redCoverageForMaduraMin: 0.8,
-  // Capa base por VARI para madura/sobremadura.
-  variOverripeBaseMax: -0.082,
-  variNearOverripeMax: -0.062,
+  /** Píxel cuenta como “lado rojo” en VARI si vari ≤ este valor (relajar si el recuento sale bajo). */
+  variRedPixelMax: 0.012,
+  /** Fracción mínima de píxeles rojos (no sombra) para considerar mayoría roja → madura base. */
+  redCoverageForMaduraMin: 0.5,
 
-  // Soporte fino con indices (SIPI, GNDVI, CIre).
-  pigmentScoreSupportMin: 0.68,
-  gndviLowScoreSupportMin: 0.6,
-  cireLowScoreSupportMin: 0.55,
-  supportToPromoteOverripe: 2,
+  variVoteOverripeMax: -0.074,
+  gndviVoteOverripeMax: 0.372,
+  cireVoteOverripeMax: 0.885,
+  sipiVoteOverripeMin: 0.992,
 
-  // Guardas por sombra.
-  shadowDowngradeGap: 0.095,
-  shadowPromotionBlockGap: 0.11,
-  shadowPromotionMinPigment: 0.8,
+  /** Votos (de 4) para pasar de madura a sobremadura. */
+  votesMinSobremadura: 3,
+  /**
+   * Si los votos “pasados” son como mucho este número y el GNDVI sigue alto,
+   * se regresa a inmadura (índices no respaldan rojo maduro).
+   */
+  votesMaxDowngradeToInmadura: 1,
+  /** Junto con pocos votos: GNDVI efectivo por encima sugiere aún mucha clorofila. */
+  gndviHighStillGreenMin: 0.438,
 
-  // Inmadura auxiliar (ademas de VARI verde).
+  sipiMinForMadura: 1.02,
+
   greenStrongGndviMin: 0.42,
   greenStrongCireMin: 0.92,
   lowPigmentInmaduraMax: 1.04,
@@ -159,17 +163,15 @@ export function classifyMaturityFromIndices(
   }
 
   // Sombra en bbox: alta brecha => iluminacion no uniforme, reducimos peso de gndvi global.
-  const shadowGap = Math.max(0, gndviU - gndvi);
-  const shadowMix = clamp01((shadowGap - 0.03) / 0.08); // 0=sin sombra marcada, 1=sombra fuerte
+  const shadowMix = clamp01(
+    (Math.max(0, gndviU - gndvi) - 0.03) / 0.08
+  ); // 0=sin sombra marcada, 1=sombra fuerte
   const gndviEff = (1 - shadowMix) * gndvi + shadowMix * gndviU;
 
-  // Componentes [0..1], mayor = mas firma de sobremadura.
   const redScore = clamp01((-vari - 0.045) / 0.09);
   const pigmentScore = clamp01((sipi - 0.99) / 0.2);
   const gndviLowScore = clamp01((0.43 - gndviEff) / 0.16);
   const cireLowScore = clamp01((0.95 - cire) / 0.7);
-
-  // Score robusto: privilegia rojo/pigmento y usa clorofila como confirmacion.
   const overripeScore =
     0.4 * redScore +
     0.32 * pigmentScore +
@@ -177,7 +179,6 @@ export function classifyMaturityFromIndices(
     0.12 * cireLowScore;
 
   // Inmadura: clorofila alta + pigmento/rojo bajos.
-  // Se vuelve un poco mas permisiva para no mandar inmaduras a "madura".
   const greenStrong =
     gndviEff > t.greenStrongGndviMin &&
     cire > t.greenStrongCireMin;
@@ -192,49 +193,34 @@ export function classifyMaturityFromIndices(
     return { key: "inmadura", score: overripeScore };
   }
 
-  // Regla solicitada: SOLO si el rojo cubre casi toda la fresa pasa a madura.
-  // Si no, permanece inmadura aunque el promedio de VARI sea rojizo.
+  const voteVari =
+    Number.isFinite(vari) && vari <= t.variVoteOverripeMax ? 1 : 0;
+  const voteGndvi =
+    Number.isFinite(gndviEff) && gndviEff <= t.gndviVoteOverripeMax ? 1 : 0;
+  const voteCire =
+    Number.isFinite(cire) && cire <= t.cireVoteOverripeMax ? 1 : 0;
+  const voteSipi =
+    Number.isFinite(sipi) && sipi >= t.sipiVoteOverripeMin ? 1 : 0;
+  const votes = voteVari + voteGndvi + voteCire + voteSipi;
+
+  // --- Filtro 1: mayoría “roja” en VARI (píxeles del bbox). Si no, inmadura.
   if (redCov < t.redCoverageForMaduraMin) {
     return { key: "inmadura", score: overripeScore };
   }
 
-  // 1) Clasificacion base por VARI (regla principal).
-  //    verde -> inmadura (ya manejada arriba),
-  //    rojo fuerte -> sobremadura,
-  //    rojo intermedio -> madura.
+  // Mayoría roja → punto de partida madura; el resto de índices solo refina.
   /** @type {(typeof MATURITY_CLASSES)[number]} */
-  let key =
-    vari <= t.variOverripeBaseMax ? "sobremadura" : "madura";
+  let key = "madura";
 
-  // 2) Ajuste fino madura vs sobremadura con indices de apoyo.
-  //    SOLO refinan la decision de VARI.
-  const overripeSupport =
-    Number(pigmentScore >= t.pigmentScoreSupportMin) +
-    Number(gndviLowScore >= t.gndviLowScoreSupportMin) +
-    Number(cireLowScore >= t.cireLowScoreSupportMin);
-
-  if (key === "sobremadura") {
-    // Si VARI sugiere sobremadura pero no hay soporte espectral, bajamos a madura.
-    if (
-      overripeSupport === 0 ||
-      (shadowGap > t.shadowDowngradeGap &&
-        overripeSupport < t.supportToPromoteOverripe)
-    ) {
-      key = "madura";
-    }
-  } else {
-    // Subir madura -> sobremadura solo con VARI suficientemente rojo + soporte consistente.
-    const variNearOver = vari <= t.variNearOverripeMax;
-    if (
-      variNearOver &&
-      overripeSupport >= t.supportToPromoteOverripe &&
-      !(
-        shadowGap > t.shadowPromotionBlockGap &&
-        pigmentScore < t.shadowPromotionMinPigment
-      )
-    ) {
-      key = "sobremadura";
-    }
+  if (votes >= t.votesMinSobremadura) {
+    key = "sobremadura";
+  } else if (sipi < t.sipiMinForMadura) {
+    key = "inmadura";
+  } else if (
+    votes <= t.votesMaxDowngradeToInmadura &&
+    gndviEff > t.gndviHighStillGreenMin
+  ) {
+    key = "inmadura";
   }
 
   return { key, score: overripeScore };

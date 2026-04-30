@@ -451,25 +451,33 @@ export default function AdvancedMode({ uiVisible = true } = {}) {
           Ajuste manual de umbrales de madurez
         </summary>
         <p className="mt-2 text-xs text-slate-600">
-          VARI define la capa base. SIPI, GNDVI y CIre refinan madura vs sobremadura.
+          Primero mayoría roja en VARI → madura; luego votos GNDVI/CIre/SIPI para sobremadura o bajar a
+          inmadura (sin MTCI).
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {[
             ["variInmaduraMin", "VARI verde => inmadura"],
-            ["variRedPixelMax", "Umbral píxel rojo (VARI)"],
-            ["redCoverageForMaduraMin", "Cobertura roja mínima para madura"],
-            ["variOverripeBaseMax", "VARI base => sobremadura"],
-            ["variNearOverripeMax", "VARI casi sobremadura"],
-            ["pigmentScoreSupportMin", "Soporte SIPI"],
-            ["gndviLowScoreSupportMin", "Soporte GNDVI bajo"],
-            ["cireLowScoreSupportMin", "Soporte CIre bajo"],
-            ["supportToPromoteOverripe", "N. soportes para subir"],
+            ["variRedPixelMax", "Píxel “rojo” si VARI ≤"],
+            ["redCoverageForMaduraMin", "Mayoría roja (fracción mín.)"],
+            ["variVoteOverripeMax", "Voto VARI sobremadura si VARI ≤"],
+            ["gndviVoteOverripeMax", "Voto GNDVI si efectivo ≤"],
+            ["cireVoteOverripeMax", "Voto CIre si CIre ≤"],
+            ["sipiVoteOverripeMin", "Voto SIPI si SIPI ≥"],
+            ["votesMinSobremadura", "Votos mín. sobremadura (1–4)"],
+            ["votesMaxDowngradeToInmadura", "Votos máx. + GNDVI alto → inmadura"],
+            ["gndviHighStillGreenMin", "GNDVI alto (regreso inmadura)"],
+            ["sipiMinForMadura", "SIPI mín. madura / refinado"],
           ].map(([key, label]) => (
             <label key={key} className="flex flex-col gap-1 rounded border border-slate-200 bg-white p-2">
               <span className="text-[11px] text-slate-600">{label}</span>
               <input
                 type="number"
-                step={key === "supportToPromoteOverripe" ? 1 : 0.001}
+                step={
+                  key === "votesMinSobremadura" ||
+                  key === "votesMaxDowngradeToInmadura"
+                    ? 1
+                    : 0.001
+                }
                 value={maturityUi[key]}
                 onChange={(e) => setThresholdValue(key, e.target.value)}
                 className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"

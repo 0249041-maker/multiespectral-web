@@ -1,11 +1,17 @@
 /**
  * NDVI en el navegador: (NIR - R) / (NIR + R).
- * Las imágenes deben estar alineadas y con las mismas dimensiones.
+ * La alineación NIR→R usa la misma implementación que RGB y demás índices
+ * (`createAlignerForReferenceImage` en spectralRgbComposite.js).
  */
 
+import {
+  applyShiftFloat32,
+  createAlignerForReferenceImage,
+  drawToImageData,
+  imageDataToLuminance,
+} from "@/lib/spectralRgbComposite";
+
 const EPS = 1e-6;
-const ALIGN_PREVIEW_MAX = 224;
-const ALIGN_MAX_SHIFT = 72;
 
 function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
@@ -37,123 +43,6 @@ function loadImageFromUrl(url) {
     img.onerror = () => reject(new Error("No se pudo cargar la imagen remota."));
     img.src = url;
   });
-}
-
-/** Luminancia 0..1 (útil si la captura viene como PNG en escala de grises o RGB). */
-function luminanceFromRgba(r, g, b) {
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-}
-
-function drawImageData(img, w, h) {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("Canvas 2D no disponible.");
-  ctx.drawImage(img, 0, 0, w, h);
-  return ctx.getImageData(0, 0, w, h);
-}
-
-function imageDataToLuminance(imageData) {
-  const { data } = imageData;
-  const n = data.length / 4;
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    out[i] = luminanceFromRgba(data[o], data[o + 1], data[o + 2]);
-  }
-  return out;
-}
-
-function edgeMap(lum, w, h) {
-  const out = new Float32Array(w * h);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      const gx = lum[i + 1] - lum[i - 1];
-      const gy = lum[i + w] - lum[i - w];
-      out[i] = Math.sqrt(gx * gx + gy * gy);
-    }
-  }
-  return out;
-}
-
-function luminanceDownscaled(img, maxSide) {
-  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-  const sw = Math.max(1, Math.round(img.width * scale));
-  const sh = Math.max(1, Math.round(img.height * scale));
-  return { lum: imageDataToLuminance(drawImageData(img, sw, sh)), sw, sh };
-}
-
-function findBestTranslation(ref, mov, sw, sh, maxShift) {
-  const n = sw * sh;
-  let meanR = 0;
-  let meanM = 0;
-  for (let i = 0; i < n; i++) {
-    meanR += ref[i];
-    meanM += mov[i];
-  }
-  meanR /= n;
-  meanM /= n;
-
-  let varR = 0;
-  let varM = 0;
-  for (let i = 0; i < n; i++) {
-    const dr = ref[i] - meanR;
-    const dm = mov[i] - meanM;
-    varR += dr * dr;
-    varM += dm * dm;
-  }
-  const stdR = Math.sqrt(varR / n) + 1e-9;
-  const stdM = Math.sqrt(varM / n) + 1e-9;
-
-  let bestScore = -Infinity;
-  let bestDx = 0;
-  let bestDy = 0;
-  const stride = sw > 96 || sh > 96 ? 2 : 1;
-
-  for (let dy = -maxShift; dy <= maxShift; dy++) {
-    for (let dx = -maxShift; dx <= maxShift; dx++) {
-      let sum = 0;
-      let count = 0;
-      for (let y = 0; y < sh; y += stride) {
-        const ys = y + dy;
-        if (ys < 0 || ys >= sh) continue;
-        for (let x = 0; x < sw; x += stride) {
-          const xs = x + dx;
-          if (xs < 0 || xs >= sw) continue;
-          const ir = y * sw + x;
-          const im = ys * sw + xs;
-          const vr = (ref[ir] - meanR) / stdR;
-          const vm = (mov[im] - meanM) / stdM;
-          sum += vr * vm;
-          count++;
-        }
-      }
-      if (count === 0) continue;
-      const score = sum / count;
-      if (score > bestScore) {
-        bestScore = score;
-        bestDx = dx;
-        bestDy = dy;
-      }
-    }
-  }
-  return { dx: bestDx, dy: bestDy };
-}
-
-function applyShiftLuminance(srcLum, w, h, dx, dy) {
-  const out = new Float32Array(w * h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const xs = Math.round(x + dx);
-      const ys = Math.round(y + dy);
-      const xc = Math.max(0, Math.min(w - 1, xs));
-      const yc = Math.max(0, Math.min(h - 1, ys));
-      out[y * w + x] = srcLum[yc * w + xc];
-    }
-  }
-  return out;
 }
 
 /**
@@ -192,7 +81,7 @@ export function ndviToRgb(ndvi) {
 }
 
 /**
- * Núcleo NDVI con alineación NIR→R.
+ * Núcleo NDVI con alineación NIR→R (idéntica a composición RGB / índices).
  * @param {HTMLImageElement} redImg
  * @param {HTMLImageElement} nirImg
  * @returns {Promise<{ blob: Blob; stats: { mean: number; min: number; max: number }; width: number; height: number }>}
@@ -207,29 +96,12 @@ async function computeNdviFromImages(redImg, nirImg) {
   const w = redImg.width;
   const h = redImg.height;
 
-  const redLum = imageDataToLuminance(drawImageData(redImg, w, h));
-  const nirLumRaw = imageDataToLuminance(drawImageData(nirImg, w, h));
+  const redLum = imageDataToLuminance(drawToImageData(redImg, w, h));
+  const nirLumRaw = imageDataToLuminance(drawToImageData(nirImg, w, h));
 
-  const refSmall = luminanceDownscaled(redImg, ALIGN_PREVIEW_MAX);
-  const movSmall = imageDataToLuminance(
-    drawImageData(nirImg, refSmall.sw, refSmall.sh)
-  );
-  const refEdges = edgeMap(refSmall.lum, refSmall.sw, refSmall.sh);
-  const movEdges = edgeMap(movSmall, refSmall.sw, refSmall.sh);
-  const maxShift = Math.min(
-    ALIGN_MAX_SHIFT,
-    Math.max(4, Math.floor(Math.min(refSmall.sw, refSmall.sh) / 2) - 2)
-  );
-  const shift = findBestTranslation(
-    refEdges,
-    movEdges,
-    refSmall.sw,
-    refSmall.sh,
-    maxShift
-  );
-  const dxFull = Math.round((shift.dx * w) / refSmall.sw);
-  const dyFull = Math.round((shift.dy * h) / refSmall.sh);
-  const nirLum = applyShiftLuminance(nirLumRaw, w, h, dxFull, dyFull);
+  const alignToRef = createAlignerForReferenceImage(redImg);
+  const shift = alignToRef(nirImg);
+  const nirLum = applyShiftFloat32(nirLumRaw, w, h, shift.dx, shift.dy);
 
   const out = document.createElement("canvas");
   out.width = w;
