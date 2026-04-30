@@ -451,33 +451,20 @@ export default function AdvancedMode({ uiVisible = true } = {}) {
           Ajuste manual de umbrales de madurez
         </summary>
         <p className="mt-2 text-xs text-slate-600">
-          Primero mayoría roja en VARI → madura; luego votos GNDVI/CIre/SIPI para sobremadura o bajar a
-          inmadura (sin MTCI).
+          Clasificación por tabla GNDVI/CIre con transición graduada alrededor de cada umbral para evitar cortes bruscos.
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {[
-            ["variInmaduraMin", "VARI verde => inmadura"],
-            ["variRedPixelMax", "Píxel “rojo” si VARI ≤"],
-            ["redCoverageForMaduraMin", "Mayoría roja (fracción mín.)"],
-            ["variVoteOverripeMax", "Voto VARI sobremadura si VARI ≤"],
-            ["gndviVoteOverripeMax", "Voto GNDVI si efectivo ≤"],
-            ["cireVoteOverripeMax", "Voto CIre si CIre ≤"],
-            ["sipiVoteOverripeMin", "Voto SIPI si SIPI ≥"],
-            ["votesMinSobremadura", "Votos mín. sobremadura (1–4)"],
-            ["votesMaxDowngradeToInmadura", "Votos máx. + GNDVI alto → inmadura"],
-            ["gndviHighStillGreenMin", "GNDVI alto (regreso inmadura)"],
-            ["sipiMinForMadura", "SIPI mín. madura / refinado"],
+            ["gndviHighMin", "GNDVI: umbral de Alto"],
+            ["cireHighMin", "CIre: umbral de Alto"],
+            ["gndviTransitionWidth", "GNDVI: ancho transición (graduado)"],
+            ["cireTransitionWidth", "CIre: ancho transición (graduado)"],
           ].map(([key, label]) => (
             <label key={key} className="flex flex-col gap-1 rounded border border-slate-200 bg-white p-2">
               <span className="text-[11px] text-slate-600">{label}</span>
               <input
                 type="number"
-                step={
-                  key === "votesMinSobremadura" ||
-                  key === "votesMaxDowngradeToInmadura"
-                    ? 1
-                    : 0.001
-                }
+                step={0.001}
                 value={maturityUi[key]}
                 onChange={(e) => setThresholdValue(key, e.target.value)}
                 className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"

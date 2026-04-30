@@ -6,41 +6,16 @@ function minDenomMagnitude(scaleSum) {
   return Math.max(EPS, 2.5e-4 * (scaleSum + 0.04));
 }
 
-// Umbrales calibrables de madurez (ajuste manual en campo).
-//
-// 1) VARI: si en su mayoría los píxeles son “rojos” (no verdes), la base es madura.
-// 2) GNDVI, CIre, SIPI (+ voto VARI fuerte): suben a sobremadura o bajan a inmadura. Sin MTCI.
+// Umbrales calibrables para tabla de verdad GNDVI/CIre.
 export const DEFAULT_MATURITY_THRESHOLDS = {
-  variInmaduraMin: 0.015,
-  /** Píxel cuenta como “lado rojo” en VARI si vari ≤ este valor (relajar si el recuento sale bajo). */
-  variRedPixelMax: 0.012,
-  /** Fracción mínima de píxeles rojos (no sombra) para considerar mayoría roja → madura base. */
-  redCoverageForMaduraMin: 0.5,
-
-  variVoteOverripeMax: -0.074,
-  gndviVoteOverripeMax: 0.372,
-  cireVoteOverripeMax: 0.885,
-  sipiVoteOverripeMin: 0.992,
-
-  /** Votos (de 4) para pasar de madura a sobremadura. */
-  votesMinSobremadura: 3,
-  /**
-   * Si los votos “pasados” son como mucho este número y el GNDVI sigue alto,
-   * se regresa a inmadura (índices no respaldan rojo maduro).
-   */
-  votesMaxDowngradeToInmadura: 1,
-  /** Junto con pocos votos: GNDVI efectivo por encima sugiere aún mucha clorofila. */
-  gndviHighStillGreenMin: 0.438,
-
-  sipiMinForMadura: 1.02,
-
-  greenStrongGndviMin: 0.42,
-  greenStrongCireMin: 0.92,
-  lowPigmentInmaduraMax: 1.04,
-  lowRedInmaduraMin: -0.06,
-  veryGreenGndviMin: 0.47,
-  veryGreenCireMin: 1.05,
-  veryGreenVariMin: -0.075,
+  /** GNDVI >= este valor se considera "Alto" en la tabla. */
+  gndviHighMin: 0.6,
+  /** CIre >= este valor se considera "Alto" en la tabla. */
+  cireHighMin: 0.3,
+  /** Ancho de transición alrededor del umbral de GNDVI para regla graduada. */
+  gndviTransitionWidth: 0.04,
+  /** Ancho de transición alrededor del umbral de CIre para regla graduada. */
+  cireTransitionWidth: 0.08,
 };
 
 /** @type {typeof DEFAULT_MATURITY_THRESHOLDS} */
@@ -140,6 +115,8 @@ export const MATURITY_CLASSES = /** @type {const} */ ([
  * @param {number} vari
  * @param {number} [gndviUpperMean] media del percentil alto de GNDVI (misma banda); si se omite, se usa gndvi
  * @param {number} [redCoverage] fracción [0..1] de píxeles rojos (VARI <= umbral rojo)
+ * @param {number | null} [rgbMeanLum] luminancia RGB media en el bbox (0–1), mismos píxeles que índices.
+ * @param {number | null} [rgbMeanChroma] croma RGB medio (max−min de canales).
  * @returns {{ key: (typeof MATURITY_CLASSES)[number]; score: number }}
  */
 export function classifyMaturityFromIndices(
@@ -148,82 +125,43 @@ export function classifyMaturityFromIndices(
   sipi,
   vari,
   gndviUpperMean,
-  redCoverage
+  redCoverage,
+  rgbMeanLum = null,
+  rgbMeanChroma = null
 ) {
   const t = maturityThresholds;
-  const gndviU =
+  const gndviVal =
     gndviUpperMean != null && Number.isFinite(gndviUpperMean) ? gndviUpperMean : gndvi;
-  const redCov = Number.isFinite(redCoverage) ? Math.max(0, Math.min(1, redCoverage)) : 0;
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  const gradedHigh = (value, highMin, transitionWidth) => {
+    if (!Number.isFinite(value)) return 0;
+    const width = Math.max(EPS, transitionWidth);
+    // 0 por debajo del umbral, 1 al superar (umbral + ancho), transición lineal entre ambos.
+    return clamp01((value - highMin) / width);
+  };
 
-  // Regla prioritaria solicitada: si VARI cae en rango verde, clasificar como inmadura.
-  // Esto evita que otras señales empujen a "madura" una fruta claramente verde.
-  if (vari >= t.variInmaduraMin) {
-    return { key: "inmadura", score: 0 };
-  }
+  const gndviHighLevel = gradedHigh(
+    gndviVal,
+    t.gndviHighMin,
+    t.gndviTransitionWidth
+  );
+  const cireHighLevel = gradedHigh(cire, t.cireHighMin, t.cireTransitionWidth);
 
-  // Sombra en bbox: alta brecha => iluminacion no uniforme, reducimos peso de gndvi global.
-  const shadowMix = clamp01(
-    (Math.max(0, gndviU - gndvi) - 0.03) / 0.08
-  ); // 0=sin sombra marcada, 1=sombra fuerte
-  const gndviEff = (1 - shadowMix) * gndvi + shadowMix * gndviU;
+  // Conserva la lógica de tabla de verdad con versión graduada:
+  // - GNDVI alto + CIre bajo -> madura
+  // - GNDVI alto + CIre alto -> sobremadura
+  // - Sin GNDVI alto suficiente -> inmadura
+  const gndviHigh = gndviHighLevel >= 0.5;
+  const cireHigh = cireHighLevel >= 0.5;
 
-  const redScore = clamp01((-vari - 0.045) / 0.09);
-  const pigmentScore = clamp01((sipi - 0.99) / 0.2);
-  const gndviLowScore = clamp01((0.43 - gndviEff) / 0.16);
-  const cireLowScore = clamp01((0.95 - cire) / 0.7);
-  const overripeScore =
-    0.4 * redScore +
-    0.32 * pigmentScore +
-    0.16 * gndviLowScore +
-    0.12 * cireLowScore;
+  let key = "inmadura";
+  if (gndviHigh && cireHigh) key = "sobremadura";
+  else if (gndviHigh && !cireHigh) key = "madura";
 
-  // Inmadura: clorofila alta + pigmento/rojo bajos.
-  const greenStrong =
-    gndviEff > t.greenStrongGndviMin &&
-    cire > t.greenStrongCireMin;
-  const lowPigment = sipi < t.lowPigmentInmaduraMax;
-  const lowRed = vari > t.lowRedInmaduraMin;
-  if (
-    (greenStrong && lowPigment && lowRed) ||
-    (gndviEff > t.veryGreenGndviMin &&
-      cire > t.veryGreenCireMin &&
-      vari > t.veryGreenVariMin)
-  ) {
-    return { key: "inmadura", score: overripeScore };
-  }
-
-  const voteVari =
-    Number.isFinite(vari) && vari <= t.variVoteOverripeMax ? 1 : 0;
-  const voteGndvi =
-    Number.isFinite(gndviEff) && gndviEff <= t.gndviVoteOverripeMax ? 1 : 0;
-  const voteCire =
-    Number.isFinite(cire) && cire <= t.cireVoteOverripeMax ? 1 : 0;
-  const voteSipi =
-    Number.isFinite(sipi) && sipi >= t.sipiVoteOverripeMin ? 1 : 0;
-  const votes = voteVari + voteGndvi + voteCire + voteSipi;
-
-  // --- Filtro 1: mayoría “roja” en VARI (píxeles del bbox). Si no, inmadura.
-  if (redCov < t.redCoverageForMaduraMin) {
-    return { key: "inmadura", score: overripeScore };
-  }
-
-  // Mayoría roja → punto de partida madura; el resto de índices solo refina.
-  /** @type {(typeof MATURITY_CLASSES)[number]} */
-  let key = "madura";
-
-  if (votes >= t.votesMinSobremadura) {
-    key = "sobremadura";
-  } else if (sipi < t.sipiMinForMadura) {
-    key = "inmadura";
-  } else if (
-    votes <= t.votesMaxDowngradeToInmadura &&
-    gndviEff > t.gndviHighStillGreenMin
-  ) {
-    key = "inmadura";
-  }
-
-  return { key, score: overripeScore };
+  // Puntaje graduado útil para depuración/ordenamiento:
+  // 0 -> inmadura, ~0.5 -> madura, ~1 -> sobremadura.
+  const score = clamp01(0.6 * gndviHighLevel + 0.4 * cireHighLevel);
+  return { key, score };
 }
 
 /**
@@ -278,6 +216,10 @@ export async function analyzeStrawberryMaturityInBoxes(bandUrls, boxes) {
     const cireAll = [];
     const sipiAll = [];
     const variAll = [];
+    const rgbLumPix = [];
+    const rgbLumAll = [];
+    const rgbChromaPix = [];
+    const rgbChromaAll = [];
     let totalPix = 0;
     let shadowPix = 0;
     let redPix = 0;
@@ -300,6 +242,13 @@ export async function analyzeStrawberryMaturityInBoxes(bandUrls, boxes) {
         const isShadow = lum < shadowLumThr && chroma < shadowChromaThr;
         if (isShadow) shadowPix++;
         else nonShadowPix++;
+
+        rgbLumAll.push(lum);
+        rgbChromaAll.push(chroma);
+        if (!isShadow) {
+          rgbLumPix.push(lum);
+          rgbChromaPix.push(chroma);
+        }
 
         const denG = nir + gch + EPS;
         const gndviV = (nir - gch) / denG;
@@ -340,6 +289,18 @@ export async function analyzeStrawberryMaturityInBoxes(bandUrls, boxes) {
     const cireSrc = useAll ? cireAll : cirePix;
     const sipiSrc = useAll ? sipiAll : sipiPix;
     const variSrc = useAll ? variAll : variPix;
+    const rgbLumSrc =
+      rgbLumPix.length === 0
+        ? rgbLumAll
+        : useAll
+          ? rgbLumAll
+          : rgbLumPix;
+    const rgbChromaSrc =
+      rgbChromaPix.length === 0
+        ? rgbChromaAll
+        : useAll
+          ? rgbChromaAll
+          : rgbChromaPix;
 
     const gndvi = trimmedMean(gndviSrc);
     const gndviUpperMean = upperFractionMean(gndviSrc, 0.28);
@@ -347,6 +308,10 @@ export async function analyzeStrawberryMaturityInBoxes(bandUrls, boxes) {
     const sipi = sipiSrc.length ? trimmedMean(sipiSrc) : 1;
     const vari = variSrc.length ? trimmedMean(variSrc) : 0;
     const redCoverage = nonShadowPix > 0 ? redPix / nonShadowPix : 0;
+    const rgbMeanLum = rgbLumSrc.length ? trimmedMean(rgbLumSrc) : null;
+    const rgbMeanChroma = rgbChromaSrc.length
+      ? trimmedMean(rgbChromaSrc)
+      : null;
 
     const { key, score } = classifyMaturityFromIndices(
       gndvi,
@@ -354,7 +319,9 @@ export async function analyzeStrawberryMaturityInBoxes(bandUrls, boxes) {
       sipi,
       vari,
       gndviUpperMean,
-      redCoverage
+      redCoverage,
+      rgbMeanLum,
+      rgbMeanChroma
     );
     out.push({
       ...box,
@@ -367,6 +334,8 @@ export async function analyzeStrawberryMaturityInBoxes(bandUrls, boxes) {
         vari,
         gndviUpperMean,
         redCoverage,
+        rgbMeanLum,
+        rgbMeanChroma,
         shadowFraction: totalPix > 0 ? shadowPix / totalPix : 0,
         shadowMasked: !useAll,
       },
