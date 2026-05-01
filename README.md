@@ -1,6 +1,6 @@
 # Multiespectral Web
 
-Plataforma web para trabajo espectral agrícola: sube bandas espectrales (al menos R y NIR), calcula índices en el navegador (NDVI, GNDVI, CI_re, SIPI, VARI, etc.), visualízalos con escalas de color y usa **modo avanzado** con cubos multiespectrales (hasta cinco bandas alineadas). Opcionalmente sincroniza datos con **Supabase** para que cubes e imágenes se compartan entre visitantes.
+Plataforma web para trabajo espectral agrícola: sube bandas espectrales (450, 550, 656, 725, 850), calcula índices en el navegador (NDVI, GNDVI, CI_re, SIPI, VARI, etc.), visualízalos con escalas de color y usa **modo avanzado** con cubos multiespectrales (hasta cinco bandas alineadas). Opcionalmente sincroniza datos con **Supabase** para que cubes e imágenes se compartan entre visitantes.
 
 Repositorio: [0249041-maker/multiespectral-web](https://github.com/0249041-maker/multiespectral-web).
 
