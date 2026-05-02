@@ -1,18 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 
-const DEFAULT_WS = "ws://192.168.1.149:8765";
+/** Solo variable de entorno en build; sin IP local fija por defecto. */
+function buildTimeDefaultWsUrl() {
+  const v = import.meta.env.VITE_FOCUS_LIVE_WS_URL;
+  if (typeof v === "string" && v.trim().length > 0) {
+    const t = v.trim();
+    if (t.startsWith("ws://") || t.startsWith("wss://")) return t;
+  }
+  return "";
+}
 
 /**
  * Prueba de vista en vivo: la Raspberry envía JPEG binario por WebSocket.
- * Usar la app con `npm run dev` (http://localhost) si la página HTTPS bloquea ws://.
+ * En Vercel (HTTPS) hace falta wss:// (túnel o proxy TLS); ver .env.example.
  */
 export default function FocusLiveTest() {
   const [wsUrl, setWsUrl] = useState(() => {
     try {
       const saved = window.localStorage.getItem("focus-live-ws-url");
-      return saved && saved.startsWith("ws") ? saved : DEFAULT_WS;
+      if (saved && (saved.startsWith("ws://") || saved.startsWith("wss://"))) {
+        return saved;
+      }
+      return buildTimeDefaultWsUrl();
     } catch {
-      return DEFAULT_WS;
+      return buildTimeDefaultWsUrl();
     }
   });
   const [connected, setConnected] = useState(false);
@@ -56,8 +67,24 @@ export default function FocusLiveTest() {
     }
 
     const trimmed = wsUrl.trim();
+    if (!trimmed) {
+      setError("Introduce una WebSocket URL (ws://… en HTTP local, wss://… si la página es HTTPS).");
+      return;
+    }
     if (!trimmed.startsWith("ws://") && !trimmed.startsWith("wss://")) {
-      setError('La URL debe empezar por ws:// o wss:// (ej. ws://192.168.1.149:8765).');
+      setError(
+        "La URL debe empezar por ws:// o wss:// (ej. ws://192.168.x.x:8765 o wss://xxxx.trycloudflare.com)."
+      );
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      window.location.protocol === "https:" &&
+      trimmed.startsWith("ws://")
+    ) {
+      setError(
+        "Esta página está en HTTPS: usa wss:// (p. ej. túnel Cloudflare) o abre el sitio en http://localhost para probar con ws:// en LAN."
+      );
       return;
     }
     persistUrl(trimmed);
@@ -72,16 +99,25 @@ export default function FocusLiveTest() {
     };
 
     socket.onmessage = (event) => {
-      const blob = new Blob([event.data], { type: "image/jpeg" });
-      const objectUrl = URL.createObjectURL(blob);
+      if (typeof event.data === "string") {
+        try {
+          const msg = JSON.parse(event.data);
+          console.log("Camera message:", msg);
+        } catch {
+          console.log("Camera text (non-JSON):", event.data);
+        }
+        return;
+      }
 
-      setFrameUrl(objectUrl);
+      const blob = new Blob([event.data], { type: "image/jpeg" });
+      const url = URL.createObjectURL(blob);
+      setFrameUrl(url);
 
       if (lastObjectUrlRef.current) {
         URL.revokeObjectURL(lastObjectUrlRef.current);
       }
 
-      lastObjectUrlRef.current = objectUrl;
+      lastObjectUrlRef.current = url;
     };
 
     socket.onerror = () => {
@@ -143,10 +179,15 @@ export default function FocusLiveTest() {
       </p>
 
       <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        Si abres el sitio desde <strong>HTTPS</strong> (Vercel), el navegador puede bloquear{" "}
-        <code className="rounded bg-amber-100 px-0.5">ws://</code>. Para probar, usa{" "}
-        <code className="rounded bg-amber-100 px-0.5">npm run dev</code> en{" "}
-        <code className="rounded bg-amber-100 px-0.5">http://localhost:5173</code>.
+        <strong>Vercel (HTTPS):</strong> el navegador solo permite WebSocket seguro desde HTTPS: usa{" "}
+        <code className="rounded bg-amber-100 px-0.5">wss://…</code> (túnel tipo Cloudflare/ngrok con TLS,
+        o proxy con certificado). <code className="rounded bg-amber-100 px-0.5">ws://IP_local:8765</code>{" "}
+        será bloqueado. En local: <code className="rounded bg-amber-100 px-0.5">npm run dev</code> en{" "}
+        <code className="rounded bg-amber-100 px-0.5">http://localhost:5173</code> sí permite{" "}
+        <code className="rounded bg-amber-100 px-0.5">ws://</code>.
+        {" "}
+        Opcional en build: variable{" "}
+        <code className="rounded bg-amber-100 px-0.5">VITE_FOCUS_LIVE_WS_URL</code>.
       </p>
 
       <details className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
@@ -176,16 +217,25 @@ export default function FocusLiveTest() {
         </ul>
       </details>
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-stretch">
-        <input
-          type="text"
-          value={wsUrl}
-          onChange={(e) => setWsUrl(e.target.value)}
-          className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-          placeholder="ws://192.168.1.149:8765"
-          autoComplete="off"
-          spellCheck={false}
-        />
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <label
+            htmlFor="focus-live-ws-url"
+            className="text-sm font-medium text-slate-800"
+          >
+            WebSocket URL
+          </label>
+          <input
+            id="focus-live-ws-url"
+            type="text"
+            value={wsUrl}
+            onChange={(e) => setWsUrl(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            placeholder="wss://xxxx.trycloudflare.com · ws://192.168.x.x:8765"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
 
         {!streaming ? (
           <button
@@ -240,7 +290,9 @@ export default function FocusLiveTest() {
           />
         ) : (
           <div className="flex h-[min(50vh,420px)] min-h-[240px] items-center justify-center px-4 text-center text-sm text-slate-400">
-            Aún no hay fotogramas. Inicia el servidor en la Raspberry y pulsa «Iniciar vista en vivo».
+            Aún no hay fotogramas. Pega la WebSocket URL (p. ej.{" "}
+            <code className="rounded bg-slate-800 px-1 text-slate-200">wss://…trycloudflare.com</code>
+            ), inicia el stream en la Pi y pulsa «Iniciar vista en vivo».
           </div>
         )}
       </div>
