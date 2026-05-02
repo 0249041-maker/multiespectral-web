@@ -233,7 +233,10 @@ function SpectralImagePreview({ visualization, bands, empty, onComputedStats }) 
   );
 }
 
-export default function AdvancedMode({ uiVisible = true } = {}) {
+export default function AdvancedMode({
+  uiVisible = true,
+  onOpenCamera,
+} = {}) {
   const {
     setSpectralCubeBands,
     setSpectralCubeSelection,
@@ -361,7 +364,7 @@ export default function AdvancedMode({ uiVisible = true } = {}) {
       aria-label="Modo avanzado multiespectral"
       className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
     >
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">
             Modo avanzado (técnico)
@@ -370,6 +373,15 @@ export default function AdvancedMode({ uiVisible = true } = {}) {
             Visualización detallada de cubes multiespectrales y sus índices.
           </p>
         </div>
+        {typeof onOpenCamera === "function" ? (
+          <button
+            type="button"
+            onClick={onOpenCamera}
+            className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-100 sm:w-auto sm:justify-start"
+          >
+            Agregar cámara
+          </button>
+        ) : null}
       </div>
 
       {supabase && (
