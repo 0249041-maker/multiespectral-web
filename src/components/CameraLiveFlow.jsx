@@ -8,12 +8,11 @@ import { getSupabaseEnvDebug } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 
 /**
- * Flujo: Agregar cámara (permiso) → Conectar (esperar tunnel_url en camera_status) → Vista en vivo.
+ * Flujo: Intro (equipo multiespectral) → Conectar (tunnel_url en Supabase) → Vista JPEG por WebSocket.
+ * No usa la webcam del PC: el vídeo viene del equipo + túnel Cloudflare (wss://).
  */
 export default function CameraLiveFlow({ onBack }) {
-  const [phase, setPhase] = useState("add");
-  const [booting, setBooting] = useState(true);
-  const [permError, setPermError] = useState("");
+  const [phase, setPhase] = useState("intro");
   const [resolvedUrl, setResolvedUrl] = useState("");
   const [pollErr, setPollErr] = useState("");
   const [publishDraft, setPublishDraft] = useState("");
@@ -23,48 +22,8 @@ export default function CameraLiveFlow({ onBack }) {
 
   const { configured: supabaseOk } = getSupabaseEnvDebug();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-        });
-        stream.getTracks().forEach((t) => t.stop());
-        if (!cancelled) setPhase("connect");
-      } catch (e) {
-        if (!cancelled) {
-          setPermError(
-            e instanceof Error ? e.message : "No se pudo acceder a la cámara"
-          );
-        }
-      } finally {
-        if (!cancelled) setBooting(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleAddCamera = async () => {
-    setPermError("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-      });
-      stream.getTracks().forEach((t) => t.stop());
-      setPhase("connect");
-    } catch (e) {
-      const msg =
-        e instanceof Error ? e.message : "No se pudo acceder a la cámara";
-      setPermError(msg);
-    }
-  };
-
   /**
-   * Antes del polling: al entrar en Conectar no arrastramos URLs viejas del
-   * navegador ni borradores anteriores (cada vez campo vacío hasta que publiques).
+   * Al entrar en Conectar: sin borradores ni URL en estado hasta que llegue de Supabase o publiques.
    */
   useEffect(() => {
     if (phase !== "connect") return;
@@ -181,7 +140,7 @@ export default function CameraLiveFlow({ onBack }) {
         <header className="border-b border-white/10 px-4 py-3 md:px-6">
           <button
             type="button"
-            onClick={() => setPhase("add")}
+            onClick={() => setPhase("intro")}
             className="text-sm font-medium text-slate-400 hover:text-white"
           >
             ← Atrás
@@ -294,18 +253,7 @@ export default function CameraLiveFlow({ onBack }) {
     );
   }
 
-  if (booting) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 text-white">
-        <div
-          className="h-12 w-12 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400"
-          aria-hidden
-        />
-        <p className="mt-6 text-sm text-slate-400">Solicitando acceso a la cámara…</p>
-      </div>
-    );
-  }
-
+  /* intro: sin getUserMedia — la “cámara” es el equipo remoto vía túnel */
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       <header className="border-b border-white/10 px-4 py-4 md:px-6">
@@ -322,22 +270,27 @@ export default function CameraLiveFlow({ onBack }) {
           Agregar cámara
         </p>
         <h2 className="mt-3 text-center text-2xl font-semibold text-white">
-          Permiso de cámara
+          Cámara multiespectral (equipo remoto)
         </h2>
-        <p className="mt-3 text-center text-sm leading-relaxed text-slate-400">
-          No se pudo usar la cámara automáticamente. Concede el permiso en el
-          navegador y vuelve a intentar. La vista en vivo usa el JPEG por
-          WebSocket (túnel Cloudflare).
+        <p className="mt-4 text-center text-sm leading-relaxed text-slate-400">
+          Aquí no se usa la{" "}
+          <strong className="font-medium text-slate-300">
+            webcam de esta computadora
+          </strong>
+          . La vista en vivo es el stream JPEG que envía tu equipo (p. ej.
+          Raspberry con la cámara multiespectral) a través de un túnel{" "}
+          <code className="rounded bg-white/10 px-1 text-xs text-emerald-200">
+            wss://…cloudflare…
+          </code>
+          . El navegador solo muestra ese flujo cuando pulses «Cámara» en el
+          siguiente paso.
         </p>
-        {permError ? (
-          <p className="mt-4 text-center text-sm text-red-400">{permError}</p>
-        ) : null}
         <button
           type="button"
-          onClick={handleAddCamera}
+          onClick={() => setPhase("connect")}
           className="mt-12 rounded-2xl bg-emerald-500 px-10 py-4 text-lg font-semibold text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-400"
         >
-          Agregar cámara
+          Continuar a conexión
         </button>
       </div>
     </div>
