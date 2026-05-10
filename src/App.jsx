@@ -1,65 +1,62 @@
+import BrowserTabBar from "./components/BrowserTabBar.jsx";
 import SupabaseEnvBanner from "./components/SupabaseEnvBanner.jsx";
 import { StrawberryDetectionProvider } from "./context/StrawberryDetectionContext.jsx";
 import CameraControlPage from "./pages/CameraControlPage.jsx";
 import DashboardBasic from "./pages/DashboardBasic.jsx";
 import AdvancedMode from "./pages/AdvancedMode.jsx";
-import { lazy, Suspense, useState } from "react";
-
-const StrawberryDetectionLab = lazy(() =>
-  import("./components/StrawberryDetectionLab.jsx")
-);
+import { useState } from "react";
 
 function App() {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [cameraPageOpen, setCameraPageOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("home");
 
   return (
     <StrawberryDetectionProvider>
-      {cameraPageOpen ? (
-        <CameraControlPage onBack={() => setCameraPageOpen(false)} />
-      ) : (
-        <div className="min-h-screen bg-slate-50">
-          <SupabaseEnvBanner />
-          <header className="border-b bg-white">
-            <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 md:px-6">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-xl bg-emerald-500" />
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Plataforma web
-                  </p>
-                  <h1 className="text-lg font-semibold text-slate-900">
-                    Multiespectral
-                  </h1>
-                </div>
+      <div className="flex min-h-screen flex-col bg-slate-50">
+        <SupabaseEnvBanner />
+        <header className="w-full bg-white">
+          <div className="flex w-full items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 md:px-6">
+            <div className="flex items-center gap-2 text-left">
+              <div className="h-8 w-8 shrink-0 rounded-xl bg-emerald-500" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Plataforma web
+                </p>
+                <h1 className="text-lg font-semibold text-slate-900">
+                  Multiespectral
+                </h1>
               </div>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                Estado: Draft · v1.0
-              </span>
             </div>
-          </header>
+            <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+              Estado: Draft · v1.0
+            </span>
+          </div>
 
-          <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-6">
+          <BrowserTabBar activeId={activeTab} onChange={setActiveTab} />
+        </header>
+
+        {activeTab === "home" ? (
+          <main
+            id="panel-home"
+            role="tabpanel"
+            aria-labelledby="tab-home"
+            className="mx-auto w-full max-w-7xl flex-1 space-y-6 px-4 py-6 md:px-6"
+          >
             <DashboardBasic
               onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
               advancedVisible={showAdvanced}
             />
-            <Suspense
-              fallback={
-                <p className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-                  Cargando panel de detección…
-                </p>
-              }
-            >
-              <StrawberryDetectionLab />
-            </Suspense>
             <AdvancedMode
               uiVisible={showAdvanced}
-              onOpenCamera={() => setCameraPageOpen(true)}
+              onOpenCamera={() => setActiveTab("camera")}
             />
           </main>
-        </div>
-      )}
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <CameraControlPage embedded />
+          </div>
+        )}
+      </div>
     </StrawberryDetectionProvider>
   );
 }

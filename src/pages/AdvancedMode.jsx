@@ -12,7 +12,11 @@ import {
   setMaturityThresholds,
 } from "@/lib/strawberryMaturity";
 import { useSpectralCubes } from "@/state/useSpectralCubes";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+
+const StrawberryDetectionLab = lazy(() =>
+  import("@/components/StrawberryDetectionLab.jsx")
+);
 
 const VISUALIZATIONS = [
   "NDRE",
@@ -382,6 +386,18 @@ export default function AdvancedMode({
             Agregar cámara
           </button>
         ) : null}
+      </div>
+
+      <div className="mb-6 border-t border-slate-100 pt-5">
+        <Suspense
+          fallback={
+            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-center text-sm text-slate-500">
+              Cargando panel de detección…
+            </p>
+          }
+        >
+          <StrawberryDetectionLab />
+        </Suspense>
       </div>
 
       {supabase && (

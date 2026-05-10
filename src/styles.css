@@ -6,3 +6,45 @@ body {
   @apply text-slate-900;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
 }
+
+/* Panel cámara: señal simulada y barrido */
+@keyframes camera-signal-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-2%, 1%) scale(1.02);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes camera-scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+.camera-live-signal {
+  animation: camera-signal-drift 8s ease-in-out infinite;
+}
+
+.camera-live-scanline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(34, 211, 238, 0.04),
+    transparent
+  );
+  animation: camera-scanline 4.5s linear infinite;
+  pointer-events: none;
+}
