@@ -1,15 +1,25 @@
 /**
  * Vista en vivo JPEG con overlay al pausar por cambio de filtro.
- * @param {{ frameUrl?: string, livePaused?: boolean, switchingFilter?: boolean, waiting?: boolean, placeholder?: string }} props
+ * @param {{ frameUrl?: string, livePaused?: boolean, switchingFilter?: boolean, waiting?: boolean, blanked?: boolean, placeholder?: string }} props
  */
 export default function OpticalLiveView({
   frameUrl = "",
   livePaused = false,
   switchingFilter = false,
   waiting = false,
+  blanked = false,
   placeholder = "Esperando vista en vivo…",
 }) {
   const showSwitchOverlay = livePaused && switchingFilter;
+
+  if (blanked) {
+    return (
+      <div
+        className="h-[min(50vh,420px)] min-h-[240px] rounded-2xl border border-slate-200 bg-black"
+        aria-label="Vista en vivo finalizada"
+      />
+    );
+  }
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-black">

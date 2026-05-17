@@ -19,6 +19,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
   const pendingSendRef = useRef(null);
   const unmountedRef = useRef(false);
   const livePausedRef = useRef(false);
+  const liveViewSuppressedRef = useRef(false);
   const appendLogRef = useRef(appendLog);
   const onCommandDoneRef = useRef(onCommandDone);
   const lastObjectUrlRef = useRef(null);
@@ -32,6 +33,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
   const [statusText, setStatusText] = useState("");
   const [commandPending, setCommandPending] = useState(false);
   const [activeCommandName, setActiveCommandName] = useState(null);
+  const [liveViewBlanked, setLiveViewBlanked] = useState(false);
 
   useEffect(() => {
     appendLogRef.current = appendLog;
@@ -52,8 +54,25 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
     setActiveCommandName(null);
   }, []);
 
+  const clearLiveFrame = useCallback(() => {
+    if (lastObjectUrlRef.current) {
+      URL.revokeObjectURL(lastObjectUrlRef.current);
+      lastObjectUrlRef.current = null;
+    }
+    setFrameUrl("");
+  }, []);
+
+  const setLiveViewSuppressed = useCallback(
+    (suppressed) => {
+      liveViewSuppressedRef.current = suppressed;
+      setLiveViewBlanked(suppressed);
+      if (suppressed) clearLiveFrame();
+    },
+    [clearLiveFrame]
+  );
+
   const applyJpegFrame = useCallback((arrayBuffer) => {
-    if (livePausedRef.current) return;
+    if (livePausedRef.current || liveViewSuppressedRef.current) return;
 
     const blob = new Blob([arrayBuffer], { type: "image/jpeg" });
     const url = URL.createObjectURL(blob);
@@ -308,5 +327,8 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
     activeCommandName,
     sendCommand,
     reconnect: connect,
+    clearLiveFrame,
+    setLiveViewSuppressed,
+    liveViewBlanked,
   };
 }

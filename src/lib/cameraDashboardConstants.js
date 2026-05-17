@@ -89,6 +89,8 @@ export const CALIBRATION_LED = {
   /** Al terminar calibración de filtros con éxito. */
   FILTERS_DONE: { pattern: "blink", color: "green" },
   FOCUS_APERTURE: { pattern: "blink", color: "white" },
+  /** Al terminar calibración óptica (enfoque/diafragma) con éxito. */
+  FOCUS_APERTURE_DONE: { pattern: "blink", color: "green" },
   WHITE: { pattern: "blink", color: "white" },
 };
 

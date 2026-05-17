@@ -267,6 +267,11 @@ function PanelCalFocusAperture({ dash }) {
         CALIBRATION_LED.FOCUS_APERTURE.pattern,
         CALIBRATION_LED.FOCUS_APERTURE.color
       ),
+    onSessionEnd: () =>
+      dash.finishCalibrationLed(
+        CALIBRATION_LED.FOCUS_APERTURE_DONE.pattern,
+        CALIBRATION_LED.FOCUS_APERTURE_DONE.color
+      ),
   });
 
   const bars = useMemo(
@@ -416,7 +421,8 @@ function PanelCalFocusAperture({ dash }) {
               frameUrl={optical.frameUrl}
               livePaused={optical.livePaused}
               switchingFilter={optical.switchingFilter}
-              waiting={optical.sessionActive && !optical.frameUrl}
+              blanked={optical.liveViewBlanked}
+              waiting={optical.sessionActive && !optical.frameUrl && !optical.liveViewBlanked}
               placeholder={
                 optical.sessionActive
                   ? "Esperando fotogramas de la cámara…"

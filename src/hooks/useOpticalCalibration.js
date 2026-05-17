@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WAVELENGTH_FILTERS } from "@/lib/cameraDashboardConstants";
 import { findFilterById } from "@/lib/cameraWsProtocol";
 import { useCameraWebSocket } from "@/hooks/useCameraWebSocket";
@@ -21,28 +21,33 @@ export function useOpticalCalibration({
     WAVELENGTH_FILTERS[2]?.id ?? 3
   );
 
-  const handleCommandDone = useCallback(
-    ({ command, success }) => {
-      if (command === "start_optical_calibration" && success) {
-        setSessionActive(true);
-        onSessionStart?.();
-      }
-      if (command === "finish_optical_calibration" && success) {
-        setSessionActive(false);
-        onSessionEnd?.();
-      }
-      if (command === "move_filter" && success) {
-        // filter position updated via status / result
-      }
-    },
-    [onSessionStart, onSessionEnd]
-  );
+  const onSessionStartRef = useRef(onSessionStart);
+  const onSessionEndRef = useRef(onSessionEnd);
+  const wsApiRef = useRef(null);
+
+  useEffect(() => {
+    onSessionStartRef.current = onSessionStart;
+    onSessionEndRef.current = onSessionEnd;
+  }, [onSessionStart, onSessionEnd]);
 
   const ws = useCameraWebSocket({
     wsUrl,
     appendLog,
-    onCommandDone: handleCommandDone,
+    onCommandDone: ({ command, success }) => {
+      if (command === "start_optical_calibration" && success) {
+        setSessionActive(true);
+        wsApiRef.current?.setLiveViewSuppressed(false);
+        onSessionStartRef.current?.();
+      }
+      if (command === "finish_optical_calibration" && success) {
+        setSessionActive(false);
+        wsApiRef.current?.setLiveViewSuppressed(true);
+        onSessionEndRef.current?.();
+      }
+    },
   });
+
+  wsApiRef.current = ws;
 
   const controlsDisabled = ws.commandPending;
 
