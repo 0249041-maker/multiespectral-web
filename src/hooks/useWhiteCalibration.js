@@ -22,6 +22,7 @@ export function useWhiteCalibration({
   onSessionStart,
 } = {}) {
   const [sessionActive, setSessionActive] = useState(false);
+  const [liveViewEnded, setLiveViewEnded] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [selectedFilterId, setSelectedFilterId] = useState(
     WAVELENGTH_FILTERS[0]?.id ?? 1
@@ -42,6 +43,7 @@ export function useWhiteCalibration({
     onCommandDone: async ({ command, success, result, error }) => {
       if (command === "start_white_calibration" && success) {
         setSessionActive(true);
+        setLiveViewEnded(false);
         wsApiRef.current?.setLiveViewSuppressed(false);
         onSessionStartRef.current?.();
         return;
@@ -50,9 +52,14 @@ export function useWhiteCalibration({
       if (command === "capture_white_reference") {
         if (!success) {
           setProcessing(false);
+          setLiveViewEnded(false);
+          setSessionActive(true);
+          wsApiRef.current?.setLiveViewSuppressed(false);
           return;
         }
         setProcessing(true);
+        setSessionActive(false);
+        wsApiRef.current?.setLiveViewSuppressed(true);
         try {
           const ref = await computeCompensatorsFromCaptureResult(
             /** @type {Record<string, unknown>} */ (result ?? {})
@@ -64,6 +71,9 @@ export function useWhiteCalibration({
         } catch (e) {
           const msg = e instanceof Error ? e.message : "Error al procesar cubo blanco";
           appendLog?.(`[ERR] ${msg}`);
+          setLiveViewEnded(false);
+          setSessionActive(true);
+          wsApiRef.current?.setLiveViewSuppressed(false);
         } finally {
           setProcessing(false);
         }
@@ -71,6 +81,9 @@ export function useWhiteCalibration({
 
       if (error && command === "capture_white_reference") {
         setProcessing(false);
+        setLiveViewEnded(false);
+        setSessionActive(true);
+        wsApiRef.current?.setLiveViewSuppressed(false);
       }
     },
   });
@@ -85,6 +98,8 @@ export function useWhiteCalibration({
   }, [ws]);
 
   const captureWhiteReference = useCallback(() => {
+    setLiveViewEnded(true);
+    ws.setLiveViewSuppressed(true);
     ws.sendCommand("capture_white_reference", { name: captureName });
   }, [ws, captureName]);
 
@@ -121,6 +136,8 @@ export function useWhiteCalibration({
     moveFilter,
     hasOpticalExposure: opticalExposureMs != null && opticalExposureMs > 0,
     opticalExposureMs,
-    liveViewReady: sessionActive && Boolean(ws.frameUrl),
+    liveViewEnded,
+    liveViewReady: sessionActive && !liveViewEnded && Boolean(ws.frameUrl),
+    showLiveView: sessionActive && !liveViewEnded,
   };
 }

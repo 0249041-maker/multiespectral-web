@@ -11,7 +11,7 @@ import {
 import { getSupabaseEnvDebug } from "@/lib/supabase";
 import { computeCompensatorsFromSession } from "@/lib/whiteCompensatorCompute";
 import { listWhiteCompensatorSessions } from "@/lib/whiteCompensatorsStorage";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 function Card({ title, subtitle, children, className = "" }) {
   return (
@@ -123,7 +123,7 @@ function PanelCalWhiteNew({ dash }) {
         </button>
       </div>
 
-      {white.sessionActive ? (
+      {white.showLiveView ? (
         <>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold uppercase text-slate-500">Preview filtro</span>
@@ -151,6 +151,8 @@ function PanelCalWhiteNew({ dash }) {
             placeholder="Acomoda la cartulina blanca…"
           />
         </>
+      ) : white.liveViewEnded || white.liveViewBlanked ? (
+        <OpticalLiveView blanked />
       ) : (
         <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
           Inicia la calibración para ver la cámara en vivo y colocar la cartulina blanca.
@@ -176,11 +178,15 @@ function PanelCalWhiteNew({ dash }) {
 
 function PanelCalWhitePast({ dash }) {
   const supabaseDebug = getSupabaseEnvDebug();
+  const appendLogRef = useRef(dash.appendLog);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [sessions, setSessions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const loadedRef = useRef(false);
+
+  appendLogRef.current = dash.appendLog;
 
   const load = useCallback(async () => {
     if (!supabaseDebug.configured) {
@@ -193,15 +199,19 @@ function PanelCalWhitePast({ dash }) {
     try {
       const list = await listWhiteCompensatorSessions();
       setSessions(list);
-      dash.appendLog(`[CAL] ${list.length} cubo(s) blanco en ${WHITE_COMPENSATORS_BUCKET}`);
+      appendLogRef.current?.(
+        `[CAL] ${list.length} cubo(s) blanco en ${WHITE_COMPENSATORS_BUCKET}`
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al listar");
     } finally {
       setLoading(false);
     }
-  }, [dash, supabaseDebug.configured]);
+  }, [supabaseDebug.configured]);
 
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
     load();
   }, [load]);
 
@@ -356,7 +366,8 @@ export default function PanelCalWhite({ dash }) {
         </button>
       </div>
 
-      {tab === "new" ? <PanelCalWhiteNew dash={dash} /> : <PanelCalWhitePast dash={dash} />}
+      {tab === "new" ? <PanelCalWhiteNew key="white-new" dash={dash} /> : null}
+      {tab === "past" ? <PanelCalWhitePast key="white-past" dash={dash} /> : null}
     </Card>
   );
 }
