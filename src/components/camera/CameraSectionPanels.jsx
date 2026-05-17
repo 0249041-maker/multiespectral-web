@@ -9,6 +9,7 @@ import {
   CALIBRATION_LED,
   CAMERA_LIVE_WS_URL,
   CAMERA_SECTION_IDS,
+  CAMERA_WORKFLOW_STEP_IDS,
   WAVELENGTH_FILTERS,
 } from "@/lib/cameraDashboardConstants";
 import { useFilterCalibration } from "@/hooks/useFilterCalibration";
@@ -104,6 +105,12 @@ function PanelConfig({ dash }) {
 
   const appendLog = dash.appendLog;
 
+  useEffect(() => {
+    if (networks.length > 0) {
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CONFIG);
+    }
+  }, [networks.length, dash.completeWorkflowStep]);
+
   return (
     <Card title="Redes WiFi guardadas" subtitle="Gestión local simulada (sin backend).">
       <ul className="space-y-2">
@@ -155,11 +162,13 @@ function PanelCalFilters({ dash }) {
   const cal = useFilterCalibration({
     wsUrl: CAMERA_LIVE_WS_URL,
     appendLog: dash.appendLog,
-    onCalibrationSuccess: () =>
+    onCalibrationSuccess: () => {
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAL_FILTERS);
       dash.finishCalibrationLed(
         CALIBRATION_LED.FILTERS_DONE.pattern,
         CALIBRATION_LED.FILTERS_DONE.color
-      ),
+      );
+    },
   });
 
   const statusTone =
@@ -269,11 +278,13 @@ function PanelCalFocusAperture({ dash }) {
         CALIBRATION_LED.FOCUS_APERTURE.pattern,
         CALIBRATION_LED.FOCUS_APERTURE.color
       ),
-    onSessionEnd: () =>
+    onSessionEnd: () => {
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAL_FOCUS);
       dash.finishCalibrationLed(
         CALIBRATION_LED.FOCUS_APERTURE_DONE.pattern,
         CALIBRATION_LED.FOCUS_APERTURE_DONE.color
-      ),
+      );
+    },
     onExposureChange: (ms) => dash.setOpticalExposureMs(ms),
   });
 
@@ -486,6 +497,8 @@ function PanelCaptureSingle({ dash }) {
     appendLog: dash.appendLog,
     activeWhiteReference: dash.activeWhiteReference,
     opticalExposureMs: dash.opticalExposureMs,
+    onCaptureSuccess: () =>
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAPTURE),
   });
 
   const phase = capture.commandPending
@@ -602,6 +615,12 @@ function PanelCaptureContinuous({ dash }) {
   const [intervalSec, setIntervalSec] = useState("8");
 
   const intervalMs = Math.max(500, Number.parseFloat(intervalSec) * 1000 || 8000);
+
+  useEffect(() => {
+    if (cubes >= 1) {
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAPTURE);
+    }
+  }, [cubes, dash.completeWorkflowStep]);
 
   useEffect(() => {
     if (mission !== "running") return;

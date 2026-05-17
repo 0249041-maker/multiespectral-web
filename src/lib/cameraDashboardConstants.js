@@ -13,39 +13,55 @@ export const CAMERA_SECTION_IDS = {
   LOGS: "logs",
 };
 
+/** IDs de pasos del flujo de trabajo (línea de tiempo del menú). */
+export const CAMERA_WORKFLOW_STEP_IDS = {
+  CONFIG: "config",
+  CAL_FILTERS: "calFilters",
+  CAL_FOCUS: "calFocus",
+  CAL_WHITE: "calWhite",
+  CAPTURE: "capture",
+};
+
+/** Pasos ordenados: Config → calibraciones → captura (1× o secuencia). */
+export const CAMERA_WORKFLOW_STEPS = [
+  {
+    id: CAMERA_WORKFLOW_STEP_IDS.CONFIG,
+    label: "Config",
+    items: [{ sectionId: CAMERA_SECTION_IDS.CONFIG, short: "Config" }],
+  },
+  {
+    id: CAMERA_WORKFLOW_STEP_IDS.CAL_FILTERS,
+    label: "Cal filtros",
+    items: [{ sectionId: CAMERA_SECTION_IDS.CAL_FILTERS, short: "Cal · filtros" }],
+  },
+  {
+    id: CAMERA_WORKFLOW_STEP_IDS.CAL_FOCUS,
+    label: "Cal foco",
+    items: [
+      { sectionId: CAMERA_SECTION_IDS.CAL_FOCUS_APERTURE, short: "Cal · foco/diaf." },
+    ],
+  },
+  {
+    id: CAMERA_WORKFLOW_STEP_IDS.CAL_WHITE,
+    label: "Cal blanco",
+    items: [{ sectionId: CAMERA_SECTION_IDS.CAL_WHITE, short: "Cal · blanco" }],
+  },
+  {
+    id: CAMERA_WORKFLOW_STEP_IDS.CAPTURE,
+    label: "Captura",
+    items: [
+      { sectionId: CAMERA_SECTION_IDS.CAPTURE_SINGLE, short: "1× cubo" },
+      { sectionId: CAMERA_SECTION_IDS.CAPTURE_CONTINUOUS, short: "Secuencia" },
+    ],
+  },
+];
+
 export const CAMERA_NAV_GROUPS = [
   {
     label: "Instrumentación",
     items: [
       { id: CAMERA_SECTION_IDS.STATUS, label: "Estado", short: "Estado" },
       { id: CAMERA_SECTION_IDS.LIVE, label: "Vista en vivo", short: "Live" },
-    ],
-  },
-  {
-    label: "Configuración",
-    items: [{ id: CAMERA_SECTION_IDS.CONFIG, label: "Parámetros", short: "Config" }],
-  },
-  {
-    label: "Calibraciones",
-    items: [
-      { id: CAMERA_SECTION_IDS.CAL_FILTERS, label: "Filtros", short: "Cal · filtros" },
-      {
-        id: CAMERA_SECTION_IDS.CAL_FOCUS_APERTURE,
-        label: "Enfoque y diafragma",
-        short: "Cal · foco/diaf.",
-      },
-      { id: CAMERA_SECTION_IDS.CAL_WHITE, label: "Blancos", short: "Cal · blanco" },
-    ],
-  },
-  {
-    label: "Captura",
-    items: [
-      { id: CAMERA_SECTION_IDS.CAPTURE_SINGLE, label: "Individual", short: "1× cubo" },
-      {
-        id: CAMERA_SECTION_IDS.CAPTURE_CONTINUOUS,
-        label: "Continua",
-        short: "Secuencia",
-      },
     ],
   },
   {

@@ -9,6 +9,7 @@ import { useCameraWebSocket } from "@/hooks/useCameraWebSocket";
  *   appendLog?: (line: string) => void,
  *   activeWhiteReference?: { cube_id: string, compensators: Record<string, number> } | null,
  *   opticalExposureMs?: number | null,
+ *   onCaptureSuccess?: () => void,
  * }} options
  */
 export function useCaptureCube({
@@ -16,6 +17,7 @@ export function useCaptureCube({
   appendLog,
   activeWhiteReference,
   opticalExposureMs,
+  onCaptureSuccess,
 } = {}) {
   const [lastCaptureOk, setLastCaptureOk] = useState(false);
 
@@ -25,6 +27,7 @@ export function useCaptureCube({
     onCommandDone: ({ command, success }) => {
       if (command === "capture_cube") {
         setLastCaptureOk(success);
+        if (success) onCaptureSuccess?.();
       }
     },
   });

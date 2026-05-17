@@ -8,6 +8,7 @@ import { useWhiteCalibration } from "@/hooks/useWhiteCalibration";
 import {
   CALIBRATION_LED,
   CAMERA_LIVE_WS_URL,
+  CAMERA_WORKFLOW_STEP_IDS,
   WHITE_CALIBRATION_BANDS_NM,
   WHITE_COMPENSATORS_BUCKET,
   WAVELENGTH_FILTERS,
@@ -72,6 +73,7 @@ function PanelCalWhiteNew({ dash }) {
         bucket: ref.bucket,
         compensators: ref.compensators,
       });
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAL_WHITE);
       dash.finishCalibrationLed(CALIBRATION_LED.WHITE_DONE.pattern, CALIBRATION_LED.WHITE_DONE.color);
       dash.appendLog(
         `[OK] Compensadores calculados · ${ref.cube_id} · bandas ${Object.keys(ref.compensators).join(", ")}`
@@ -236,6 +238,7 @@ function PanelCalWhitePast({ dash }) {
         exposure_ms: dash.opticalExposureMs ?? undefined,
         compensators: ref.compensators,
       });
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAL_WHITE);
       dash.finishCalibrationLed(CALIBRATION_LED.WHITE_DONE.pattern, CALIBRATION_LED.WHITE_DONE.color);
       dash.appendLog(`[OK] Compensador histórico · ${session.id}`);
     } catch (e) {
@@ -394,6 +397,7 @@ export default function PanelCalWhite({ dash }) {
     wsUrl: CAMERA_LIVE_WS_URL,
     appendLog: dash.appendLog,
     onFinished: () => {
+      dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAL_WHITE);
       dash.finishCalibrationLed(
         CALIBRATION_LED.WHITE_DONE.pattern,
         CALIBRATION_LED.WHITE_DONE.color

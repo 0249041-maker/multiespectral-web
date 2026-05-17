@@ -59,7 +59,11 @@ export default function CameraDashboardLayout({ embedded = false, onBack }) {
       <CameraInstrumentHeader dash={dash} />
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <CameraSidebar activeId={dash.section} onSelect={dash.setSection} />
+        <CameraSidebar
+          activeId={dash.section}
+          onSelect={dash.setSection}
+          workflowStatus={dash.workflowStatus}
+        />
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50">
           <div className="mx-auto max-w-7xl px-4 py-5 md:px-6 lg:py-6">
             <CameraSectionPanels section={dash.section} dash={dash} />

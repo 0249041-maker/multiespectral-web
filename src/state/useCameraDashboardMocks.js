@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CAMERA_SECTION_IDS } from "@/lib/cameraDashboardConstants";
+import {
+  CAMERA_SECTION_IDS,
+  CAMERA_WORKFLOW_STEP_IDS,
+} from "@/lib/cameraDashboardConstants";
 
 const INITIAL_LOGS = [
   "[INFO] Multiespectral camera UI shell iniciado (mock).",
@@ -43,7 +46,23 @@ export function useCameraDashboardMocks() {
     /** @type {ActiveWhiteReference | null} */ (null)
   );
 
+  /** Pasos del flujo completados (línea de tiempo del menú). */
+  const [workflowCompleted, setWorkflowCompleted] = useState({
+    [CAMERA_WORKFLOW_STEP_IDS.CONFIG]: false,
+    [CAMERA_WORKFLOW_STEP_IDS.CAL_FILTERS]: false,
+    [CAMERA_WORKFLOW_STEP_IDS.CAL_FOCUS]: false,
+    [CAMERA_WORKFLOW_STEP_IDS.CAL_WHITE]: false,
+    [CAMERA_WORKFLOW_STEP_IDS.CAPTURE]: false,
+  });
+
   const logEndRef = useRef(null);
+
+  const completeWorkflowStep = useCallback((stepId) => {
+    setWorkflowCompleted((prev) => {
+      if (prev[stepId]) return prev;
+      return { ...prev, [stepId]: true };
+    });
+  }, []);
 
   const appendLog = useCallback((line) => {
     setLogs((prev) => [...prev.slice(-400), `[${ts()}] ${line}`]);
@@ -76,6 +95,22 @@ export function useCameraDashboardMocks() {
     [section]
   );
 
+  const workflowStatus = useMemo(() => {
+    const hasCompensators =
+      activeWhiteReference?.compensators &&
+      Object.keys(activeWhiteReference.compensators).length > 0;
+
+    return {
+      [CAMERA_WORKFLOW_STEP_IDS.CONFIG]: workflowCompleted.config,
+      [CAMERA_WORKFLOW_STEP_IDS.CAL_FILTERS]: workflowCompleted.calFilters,
+      [CAMERA_WORKFLOW_STEP_IDS.CAL_FOCUS]:
+        workflowCompleted.calFocus || opticalExposureMs != null,
+      [CAMERA_WORKFLOW_STEP_IDS.CAL_WHITE]:
+        workflowCompleted.calWhite || Boolean(hasCompensators),
+      [CAMERA_WORKFLOW_STEP_IDS.CAPTURE]: workflowCompleted.capture,
+    };
+  }, [workflowCompleted, opticalExposureMs, activeWhiteReference]);
+
   return {
     section,
     setSection,
@@ -101,6 +136,8 @@ export function useCameraDashboardMocks() {
     setOpticalExposureMs,
     activeWhiteReference,
     setActiveWhiteReference,
+    workflowStatus,
+    completeWorkflowStep,
     nav,
   };
 }
