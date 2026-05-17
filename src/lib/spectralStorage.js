@@ -1,3 +1,7 @@
+import {
+  deleteSpectralCubeFromStorage,
+  isStorageSpectralCubeId,
+} from "@/lib/spectralCubesStorage";
 import { supabase } from "@/lib/supabase";
 
 /** Nombre del bucket en Supabase Storage (no confundir con la tabla `capture_images`). */
@@ -234,6 +238,11 @@ export async function deleteSpectralCube(captureId) {
   }
   if (!captureId || typeof captureId !== "string") {
     throw new Error("Id de capture no válido");
+  }
+
+  if (isStorageSpectralCubeId(captureId)) {
+    await deleteSpectralCubeFromStorage(captureId);
+    return;
   }
 
   const { error: imgErr } = await supabase

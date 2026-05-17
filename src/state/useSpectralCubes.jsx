@@ -14,6 +14,7 @@ import {
   revokeSpectralCubeUrls,
   upsertSpectralCubeBands,
 } from "@/lib/spectralStorage";
+import { listSpectralCubesFromStorage } from "@/lib/spectralCubesStorage";
 import { compensateBandsWithWhiteReference } from "@/lib/whiteReferenceCompensation";
 import {
   normalizeSupabaseStorageImageUrl,
@@ -97,15 +98,33 @@ async function loadCubesFromSupabase() {
 }
 
 async function loadMergedCubes() {
+  /** @type {Array<{ id: string }>} */
   let remote = [];
-  let supabaseError = null;
+  const errors = [];
 
   if (supabase) {
     try {
-      remote = await loadCubesFromSupabase();
+      const fromStorage = await listSpectralCubesFromStorage();
+      remote = [...fromStorage];
     } catch (e) {
-      supabaseError =
-        e instanceof Error ? e.message : "No se pudieron cargar los cubes";
+      errors.push(
+        e instanceof Error ? e.message : "No se pudieron listar cubos en Storage"
+      );
+    }
+
+    try {
+      const fromDb = await loadCubesFromSupabase();
+      const seen = new Set(remote.map((c) => c.id));
+      for (const cube of fromDb) {
+        if (!seen.has(cube.id)) {
+          seen.add(cube.id);
+          remote.push(cube);
+        }
+      }
+    } catch (e) {
+      errors.push(
+        e instanceof Error ? e.message : "No se pudieron cargar cubos desde la base de datos"
+      );
     }
   }
 
@@ -119,6 +138,13 @@ async function loadMergedCubes() {
   const remoteIds = new Set(remote.map((c) => c.id));
   const localOnly = local.filter((c) => !remoteIds.has(c.id));
   const merged = [...remote, ...localOnly];
+
+  const supabaseError =
+    errors.length > 0 && merged.length === 0
+      ? errors.join(" · ")
+      : errors.length > 0
+        ? `${errors[0]} (se muestran otras fuentes si hay datos).`
+        : null;
 
   return { merged, supabaseError };
 }

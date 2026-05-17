@@ -406,18 +406,17 @@ export default function AdvancedMode({
             Cubes en la nube (Supabase)
           </p>
           <p className="mt-1 text-sm text-emerald-800">
-            Las imágenes se suben al bucket de Storage{" "}
+            Los cubos del instrumento se guardan en{" "}
             <code className="rounded bg-white px-1 text-xs">
               {import.meta.env.VITE_SUPABASE_SPECTRAL_BUCKET || "capture_image"}
             </code>{" "}
-            (tabla distinta:{" "}
-            <code className="rounded bg-white px-1 text-xs">capture_images</code>
-            ).{" "}
-            y las URLs se guardan en{" "}
+            como{" "}
+            <span className="font-mono text-xs">
+              camera_001/cube_YYYYMMDD_HHMMSS/450.bmp … 850.bmp
+            </span>{" "}
+            (+ metadata.json). Las subidas manuales desde la web siguen usando{" "}
             <code className="rounded bg-white px-1 text-xs">captures</code> /{" "}
             <code className="rounded bg-white px-1 text-xs">capture_images</code>.
-            Cualquier usuario puede ver los mismos cubes al entrar en la web (si
-            en Supabase tienes lectura pública o las políticas del script SQL).
           </p>
         </div>
       )}
