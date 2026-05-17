@@ -488,7 +488,6 @@ function PanelCaptureSingle({ dash }) {
   const [name, setName] = useState("rancho_lado_norte_1");
 
   const capture = useCubeCaptureMode({
-    wsUrl: CAMERA_LIVE_WS_URL,
     appendLog: dash.appendLog,
     activeWhiteReference: dash.activeWhiteReference,
     opticalExposureMs: dash.opticalExposureMs,
@@ -504,7 +503,9 @@ function PanelCaptureSingle({ dash }) {
         ? "success"
         : capture.modeActive
           ? "ready"
-          : "starting";
+          : capture.isStarting
+            ? "starting"
+            : "idle";
 
   const statusTone =
     capture.connectionError || capture.statusText?.toLowerCase().includes("error")
@@ -585,9 +586,21 @@ function PanelCaptureSingle({ dash }) {
             <span className={capture.modeActive ? "text-emerald-700" : "text-amber-700"}>
               {capture.modeActive
                 ? capture.cameraInfo?.state ?? "cube_capture_mode"
-                : "iniciando…"}
+                : capture.isStarting
+                  ? "iniciando…"
+                  : "inactivo"}
             </span>
           </span>
+          {capture.modeActive ? (
+            <button
+              type="button"
+              disabled={capture.commandPending || capture.capturingCube}
+              onClick={capture.exitCaptureMode}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Salir del modo captura
+            </button>
+          ) : null}
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -626,7 +639,9 @@ function PanelCaptureSingle({ dash }) {
           placeholder={
             capture.modeActive
               ? "Esperando vista en vivo del modo captura…"
-              : "Conectando y activando modo captura de cubo…"
+              : capture.isStarting
+                ? "Activando modo captura de cubo…"
+                : "Esperando conexión con la cámara…"
           }
         />
       </Card>

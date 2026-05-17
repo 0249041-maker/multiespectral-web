@@ -2,20 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { WAVELENGTH_FILTERS } from "@/lib/cameraDashboardConstants";
 import { findFilterById } from "@/lib/cameraWsProtocol";
 import { computeCompensatorsFromCaptureResult } from "@/lib/whiteCompensatorCompute";
-import { useCameraWebSocket } from "@/hooks/useCameraWebSocket";
+import {
+  useCameraCommandListener,
+  useCameraWs,
+} from "@/context/CameraWebSocketContext";
 
 /**
  * Calibración de blancos por WebSocket (start_white_calibration, capture_white_reference, move_filter).
- * @param {{
- *   wsUrl?: string,
- *   appendLog?: (line: string) => void,
- *   opticalExposureMs?: number | null,
- *   onWhiteReferenceReady?: (ref: import("@/lib/whiteCompensatorCompute").WhiteReferenceState) => void,
- *   onSessionStart?: () => void,
- * }} options
  */
 export function useWhiteCalibration({
-  wsUrl,
   appendLog,
   opticalExposureMs,
   onWhiteReferenceReady,
@@ -29,67 +24,80 @@ export function useWhiteCalibration({
   );
   const [captureName] = useState("white_reference");
 
+  const ws = useCameraWs();
   const onReadyRef = useRef(onWhiteReferenceReady);
   const onSessionStartRef = useRef(onSessionStart);
+  const sessionActiveRef = useRef(false);
+  const wsApiRef = useRef(ws);
+
+  wsApiRef.current = ws;
+  sessionActiveRef.current = sessionActive;
 
   useEffect(() => {
     onReadyRef.current = onWhiteReferenceReady;
     onSessionStartRef.current = onSessionStart;
   }, [onWhiteReferenceReady, onSessionStart]);
 
-  const ws = useCameraWebSocket({
-    wsUrl,
-    appendLog,
-    onCommandDone: async ({ command, success, result, error }) => {
-      if (command === "start_white_calibration" && success) {
-        setSessionActive(true);
-        setLiveViewEnded(false);
-        wsApiRef.current?.setLiveViewSuppressed(false);
-        onSessionStartRef.current?.();
-        return;
-      }
-
-      if (command === "capture_white_reference") {
-        if (!success) {
-          setProcessing(false);
-          setLiveViewEnded(false);
+  useCameraCommandListener(
+    useCallback(
+      async ({ command, success, result, error }) => {
+        if (command === "start_white_calibration" && success) {
           setSessionActive(true);
+          setLiveViewEnded(false);
           wsApiRef.current?.setLiveViewSuppressed(false);
+          onSessionStartRef.current?.();
           return;
         }
-        setProcessing(true);
-        setSessionActive(false);
-        wsApiRef.current?.setLiveViewSuppressed(true);
-        try {
-          const ref = await computeCompensatorsFromCaptureResult(
-            /** @type {Record<string, unknown>} */ (result ?? {})
-          );
-          if (opticalExposureMs != null && ref.exposure_ms == null) {
-            ref.exposure_ms = opticalExposureMs;
+
+        if (command === "capture_white_reference") {
+          if (!success) {
+            setProcessing(false);
+            setLiveViewEnded(false);
+            setSessionActive(true);
+            wsApiRef.current?.setLiveViewSuppressed(false);
+            return;
           }
-          onReadyRef.current?.(ref);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : "Error al procesar cubo blanco";
-          appendLog?.(`[ERR] ${msg}`);
+          setProcessing(true);
+          setSessionActive(false);
+          wsApiRef.current?.setLiveViewSuppressed(true);
+          try {
+            const ref = await computeCompensatorsFromCaptureResult(
+              /** @type {Record<string, unknown>} */ (result ?? {})
+            );
+            if (opticalExposureMs != null && ref.exposure_ms == null) {
+              ref.exposure_ms = opticalExposureMs;
+            }
+            onReadyRef.current?.(ref);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : "Error al procesar cubo blanco";
+            appendLog?.(`[ERR] ${msg}`);
+            setLiveViewEnded(false);
+            setSessionActive(true);
+            wsApiRef.current?.setLiveViewSuppressed(false);
+          } finally {
+            setProcessing(false);
+          }
+        }
+
+        if (error && command === "capture_white_reference") {
+          setProcessing(false);
           setLiveViewEnded(false);
           setSessionActive(true);
           wsApiRef.current?.setLiveViewSuppressed(false);
-        } finally {
-          setProcessing(false);
         }
-      }
+      },
+      [appendLog, opticalExposureMs]
+    )
+  );
 
-      if (error && command === "capture_white_reference") {
-        setProcessing(false);
-        setLiveViewEnded(false);
-        setSessionActive(true);
-        wsApiRef.current?.setLiveViewSuppressed(false);
+  useEffect(() => {
+    return () => {
+      if (sessionActiveRef.current) {
+        wsApiRef.current?.sendCommand("finish_white_calibration", {});
+        appendLog?.("[CAL] Salida de pestaña · finish_white_calibration");
       }
-    },
-  });
-
-  const wsApiRef = useRef(null);
-  wsApiRef.current = ws;
+    };
+  }, [appendLog]);
 
   const controlsDisabled = ws.commandPending || processing;
 

@@ -2,6 +2,8 @@ import CameraInstrumentHeader from "@/components/camera/CameraInstrumentHeader.j
 import CameraSectionPanels from "@/components/camera/CameraSectionPanels.jsx";
 import CameraSidebar from "@/components/camera/CameraSidebar.jsx";
 import ShutdownModal from "@/components/camera/ShutdownModal.jsx";
+import { CameraWebSocketProvider } from "@/context/CameraWebSocketContext";
+import { CAMERA_LIVE_WS_URL } from "@/lib/cameraDashboardConstants";
 import { useCameraDashboardMocks } from "@/state/useCameraDashboardMocks";
 
 /**
@@ -56,9 +58,10 @@ export default function CameraDashboardLayout({ embedded = false, onBack }) {
         </div>
       ) : null}
 
-      <CameraInstrumentHeader dash={dash} />
+      <CameraWebSocketProvider wsUrl={CAMERA_LIVE_WS_URL} appendLog={dash.appendLog}>
+        <CameraInstrumentHeader dash={dash} />
 
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <CameraSidebar
           activeId={dash.section}
           onSelect={dash.setSection}
@@ -69,18 +72,19 @@ export default function CameraDashboardLayout({ embedded = false, onBack }) {
             <CameraSectionPanels section={dash.section} dash={dash} />
           </div>
         </div>
-      </div>
+        </div>
 
-      <ShutdownModal
-        open={dash.shutdownOpen}
-        onCancel={() => dash.setShutdownOpen(false)}
-        onConfirm={() => {
-          dash.appendLog("[WARN] Apagado confirmado (mock · sin comando SSH/WebSocket).");
-          dash.setShutdownOpen(false);
-          dash.setOnline(false);
-          dash.setGlobalStatusKey("error");
-        }}
-      />
+        <ShutdownModal
+          open={dash.shutdownOpen}
+          onCancel={() => dash.setShutdownOpen(false)}
+          onConfirm={() => {
+            dash.appendLog("[WARN] Apagado confirmado (mock · sin comando SSH/WebSocket).");
+            dash.setShutdownOpen(false);
+            dash.setOnline(false);
+            dash.setGlobalStatusKey("error");
+          }}
+        />
+      </CameraWebSocketProvider>
     </>
   );
 

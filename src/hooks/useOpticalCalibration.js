@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WAVELENGTH_FILTERS } from "@/lib/cameraDashboardConstants";
 import { findFilterById } from "@/lib/cameraWsProtocol";
-import { useCameraWebSocket } from "@/hooks/useCameraWebSocket";
+import {
+  useCameraCommandListener,
+  useCameraWs,
+} from "@/context/CameraWebSocketContext";
 
 const DEFAULT_EXPOSURE_MS = 30;
 
 /**
  * Calibración óptica (enfoque/diafragma): start / set_exposure / move_filter / finish.
- * @param {{ wsUrl?: string, appendLog?: (line: string) => void, onSessionStart?: () => void, onSessionEnd?: () => void, onExposureChange?: (ms: number) => void }} options
  */
 export function useOpticalCalibration({
-  wsUrl,
   appendLog,
   onSessionStart,
   onSessionEnd,
@@ -22,10 +23,15 @@ export function useOpticalCalibration({
     WAVELENGTH_FILTERS[2]?.id ?? 3
   );
 
+  const ws = useCameraWs();
   const onSessionStartRef = useRef(onSessionStart);
   const onSessionEndRef = useRef(onSessionEnd);
   const onExposureChangeRef = useRef(onExposureChange);
-  const wsApiRef = useRef(null);
+  const sessionActiveRef = useRef(false);
+  const wsApiRef = useRef(ws);
+
+  wsApiRef.current = ws;
+  sessionActiveRef.current = sessionActive;
 
   const parseExposure = useCallback(() => {
     const n = Number.parseFloat(exposureMs);
@@ -38,29 +44,37 @@ export function useOpticalCalibration({
     onExposureChangeRef.current = onExposureChange;
   }, [onSessionStart, onSessionEnd, onExposureChange]);
 
-  const ws = useCameraWebSocket({
-    wsUrl,
-    appendLog,
-    onCommandDone: ({ command, success }) => {
-      if (command === "start_optical_calibration" && success) {
-        setSessionActive(true);
-        wsApiRef.current?.setLiveViewSuppressed(false);
-        onExposureChangeRef.current?.(parseExposure());
-        onSessionStartRef.current?.();
-      }
-      if (command === "set_exposure" && success) {
-        onExposureChangeRef.current?.(parseExposure());
-      }
-      if (command === "finish_optical_calibration" && success) {
-        setSessionActive(false);
-        wsApiRef.current?.setLiveViewSuppressed(true);
-        onExposureChangeRef.current?.(parseExposure());
-        onSessionEndRef.current?.();
-      }
-    },
-  });
+  useCameraCommandListener(
+    useCallback(
+      ({ command, success }) => {
+        if (command === "start_optical_calibration" && success) {
+          setSessionActive(true);
+          wsApiRef.current?.setLiveViewSuppressed(false);
+          onExposureChangeRef.current?.(parseExposure());
+          onSessionStartRef.current?.();
+        }
+        if (command === "set_exposure" && success) {
+          onExposureChangeRef.current?.(parseExposure());
+        }
+        if (command === "finish_optical_calibration" && success) {
+          setSessionActive(false);
+          wsApiRef.current?.setLiveViewSuppressed(true);
+          onExposureChangeRef.current?.(parseExposure());
+          onSessionEndRef.current?.();
+        }
+      },
+      [parseExposure]
+    )
+  );
 
-  wsApiRef.current = ws;
+  useEffect(() => {
+    return () => {
+      if (sessionActiveRef.current) {
+        wsApiRef.current?.sendCommand("finish_optical_calibration", {});
+        appendLog?.("[CAL] Salida de pestaña · finish_optical_calibration");
+      }
+    };
+  }, [appendLog]);
 
   const controlsDisabled = ws.commandPending;
 

@@ -1,37 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatCommandError } from "@/lib/cameraWsProtocol";
-import { useCameraWebSocket } from "@/hooks/useCameraWebSocket";
+import {
+  useCameraCommandListener,
+  useCameraWs,
+} from "@/context/CameraWebSocketContext";
 
 /**
  * Envía finish_white_calibration tras tener compensadores activos en el front.
- * @param {{ wsUrl?: string, appendLog?: (line: string) => void, onFinished?: () => void }} options
  */
-export function useFinishWhiteCalibration({ wsUrl, appendLog, onFinished } = {}) {
+export function useFinishWhiteCalibration({ appendLog, onFinished } = {}) {
+  const ws = useCameraWs();
   const onFinishedRef = useRef(onFinished);
   onFinishedRef.current = onFinished;
 
   const [finalized, setFinalized] = useState(false);
   const [finishError, setFinishError] = useState("");
 
-  const ws = useCameraWebSocket({
-    wsUrl,
-    appendLog,
-    onCommandDone: ({ command, success, error }) => {
-      if (command !== "finish_white_calibration") return;
+  useCameraCommandListener(
+    useCallback(
+      ({ command, success, error }) => {
+        if (command !== "finish_white_calibration") return;
 
-      if (success) {
-        setFinishError("");
-        setFinalized(true);
-        onFinishedRef.current?.();
-        appendLog?.("[OK] finish_white_calibration · cámara en línea");
-      } else {
-        const err = formatCommandError(error);
-        setFinishError(err);
-        setFinalized(false);
-        appendLog?.(`[ERR] finish_white_calibration · ${err}`);
-      }
-    },
-  });
+        if (success) {
+          setFinishError("");
+          setFinalized(true);
+          onFinishedRef.current?.();
+          appendLog?.("[OK] finish_white_calibration · cámara en línea");
+        } else {
+          const err = formatCommandError(error);
+          setFinishError(err);
+          setFinalized(false);
+          appendLog?.(`[ERR] finish_white_calibration · ${err}`);
+        }
+      },
+      [appendLog]
+    )
+  );
 
   const finishWhiteCalibration = useCallback(() => {
     if (ws.commandPending || finalized) return false;
@@ -59,8 +63,6 @@ export function useFinishWhiteCalibration({ wsUrl, appendLog, onFinished } = {})
 
 /**
  * Reinicia el estado de finalización si cambió el cubo blanco activo.
- * @param {ReturnType<typeof useFinishWhiteCalibration>} finish
- * @param {string | undefined} cubeId
  */
 export function useResetFinishOnReferenceChange(finish, cubeId) {
   const prevIdRef = useRef(cubeId);
