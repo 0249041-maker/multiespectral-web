@@ -3,8 +3,8 @@ export const CAMERA_SECTION_IDS = {
   STATUS: "status",
   CONFIG: "config",
   CAL_FILTERS: "cal-filters",
-  CAL_FOCUS: "cal-focus",
-  CAL_APERTURE: "cal-aperture",
+  /** Enfoque + diafragma en un solo flujo (misma vista en vivo). */
+  CAL_FOCUS_APERTURE: "cal-focus-aperture",
   CAL_WHITE: "cal-white",
   CAPTURE_SINGLE: "capture-single",
   CAPTURE_CONTINUOUS: "capture-continuous",
@@ -29,8 +29,11 @@ export const CAMERA_NAV_GROUPS = [
     label: "Calibraciones",
     items: [
       { id: CAMERA_SECTION_IDS.CAL_FILTERS, label: "Filtros", short: "Cal · filtros" },
-      { id: CAMERA_SECTION_IDS.CAL_FOCUS, label: "Enfoque", short: "Cal · foco" },
-      { id: CAMERA_SECTION_IDS.CAL_APERTURE, label: "Diafragma", short: "Cal · diaf." },
+      {
+        id: CAMERA_SECTION_IDS.CAL_FOCUS_APERTURE,
+        label: "Enfoque y diafragma",
+        short: "Cal · foco/diaf.",
+      },
       { id: CAMERA_SECTION_IDS.CAL_WHITE, label: "Blancos", short: "Cal · blanco" },
     ],
   },
@@ -75,6 +78,16 @@ export const GLOBAL_STATUS_LABELS = {
   capturing: "Capturing",
   uploading: "Uploading",
   error: "Error",
+};
+
+/** WebSocket de vista en vivo para calibraciones (y stream de cámara en producción). */
+export const CAMERA_LIVE_WS_URL = "wss://camera.multispectralcam.com";
+
+/** Patrones LED por tipo de calibración al pulsar «Iniciar calibración». */
+export const CALIBRATION_LED = {
+  FILTERS: { pattern: "spinner", color: "white" },
+  FOCUS_APERTURE: { pattern: "blink", color: "white" },
+  WHITE: { pattern: "blink", color: "white" },
 };
 
 export const WAVELENGTH_FILTERS = [

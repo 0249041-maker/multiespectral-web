@@ -3,6 +3,8 @@ import ScientificLiveView from "@/components/camera/ScientificLiveView.jsx";
 import FocusLiveTest from "@/components/FocusLiveTest.jsx";
 import NeoPixelRing from "@/components/camera/NeoPixelRing.jsx";
 import {
+  CALIBRATION_LED,
+  CAMERA_LIVE_WS_URL,
   CAMERA_SECTION_IDS,
   WAVELENGTH_FILTERS,
 } from "@/lib/cameraDashboardConstants";
@@ -94,155 +96,53 @@ function PanelConfig({ dash }) {
     { ssid: "Lab_Field_NIR", signal: 78 },
     { ssid: "Greenhouse_5G", signal: 64 },
   ]);
-  const [exposure, setExposure] = useState("12");
-  const [captureName, setCaptureName] = useState("captura_{fecha}_{filtro}");
-  const [resolution, setResolution] = useState("2464×2056");
-  const [intervalSec, setIntervalSec] = useState("8");
-  const [streamQ, setStreamQ] = useState("85");
-  const [debug, setDebug] = useState(false);
-  const [autoReconnect, setAutoReconnect] = useState(true);
-  const [autoUpload, setAutoUpload] = useState(true);
 
   const appendLog = dash.appendLog;
 
   return (
-    <div className="space-y-4">
-      <Card title="Redes WiFi guardadas" subtitle="Gestión local simulada (sin backend).">
-        <ul className="space-y-2">
-          {networks.map((n, idx) => (
-            <li
-              key={n.ssid}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-            >
-              <span className="font-mono text-sm text-slate-200">{n.ssid}</span>
-              <span className="font-mono text-xs text-slate-500">{n.signal}% señal</span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                  onClick={() => appendLog(`[UI] Editar contraseña (mock) · ${n.ssid}`)}
-                >
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg border border-red-900/60 px-2 py-1 text-xs text-red-300 hover:bg-red-950/50"
-                  onClick={() => {
-                    setNetworks((prev) => prev.filter((_, i) => i !== idx));
-                    appendLog(`[UI] Red eliminada (mock) · ${n.ssid}`);
-                  }}
-                >
-                  Eliminar
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <button
-          type="button"
-          className="mt-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
-          onClick={() => {
-            const id = `nueva_red_${networks.length + 1}`;
-            setNetworks((p) => [...p, { ssid: id, signal: 55 }]);
-            appendLog(`[UI] Agregar red (mock) · ${id}`);
-          }}
-        >
-          + Agregar red
-        </button>
-      </Card>
-
-      <Card title="Parámetros generales" subtitle="Formulario de hardware · valores no persistidos.">
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
-              Tiempo de exposición (ms)
-            </span>
-            <input
-              type="number"
-              value={exposure}
-              onChange={(e) => setExposure(e.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
-              Nombre por defecto de captura
-            </span>
-            <input
-              type="text"
-              value={captureName}
-              onChange={(e) => setCaptureName(e.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
-              Resolución
-            </span>
-            <select
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
-            >
-              <option>2464×2056</option>
-              <option>2048×1536</option>
-              <option>1920×1080</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
-              Intervalo entre capturas (s)
-            </span>
-            <input
-              type="number"
-              value={intervalSec}
-              onChange={(e) => setIntervalSec(e.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
-            />
-          </label>
-          <label className="flex flex-col gap-1 md:col-span-2">
-            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
-              Calidad de stream (%)
-            </span>
-            <input
-              type="range"
-              min="40"
-              max="100"
-              value={streamQ}
-              onChange={(e) => setStreamQ(e.target.value)}
-              className="accent-emerald-500"
-            />
-            <span className="font-mono text-xs text-slate-400">{streamQ}%</span>
-          </label>
-        </div>
-      </Card>
-
-      <Card title="Configuración avanzada">
-        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap">
-          {[
-            ["Modo debug", debug, setDebug],
-            ["Auto reconnect", autoReconnect, setAutoReconnect],
-            ["Subida automática", autoUpload, setAutoUpload],
-          ].map(([label, val, set]) => (
-            <label
-              key={label}
-              className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
-            >
-              <input
-                type="checkbox"
-                checked={val}
-                onChange={(e) => {
-                  set(e.target.checked);
-                  appendLog(`[CFG] ${label} → ${e.target.checked ? "on" : "off"} (mock)`);
+    <Card title="Redes WiFi guardadas" subtitle="Gestión local simulada (sin backend).">
+      <ul className="space-y-2">
+        {networks.map((n, idx) => (
+          <li
+            key={n.ssid}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+          >
+            <span className="font-mono text-sm text-slate-800">{n.ssid}</span>
+            <span className="font-mono text-xs text-slate-500">{n.signal}% señal</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+                onClick={() => appendLog(`[UI] Editar contraseña (mock) · ${n.ssid}`)}
+              >
+                Editar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                onClick={() => {
+                  setNetworks((prev) => prev.filter((_, i) => i !== idx));
+                  appendLog(`[UI] Red eliminada (mock) · ${n.ssid}`);
                 }}
-                className="h-4 w-4 rounded border-slate-300 bg-white text-emerald-600 focus:ring-emerald-500/40"
-              />
-              <span className="text-sm text-slate-700">{label}</span>
-            </label>
-          ))}
-        </div>
-      </Card>
-    </div>
+              >
+                Eliminar
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="mt-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
+        onClick={() => {
+          const id = `nueva_red_${networks.length + 1}`;
+          setNetworks((p) => [...p, { ssid: id, signal: 55 }]);
+          appendLog(`[UI] Agregar red (mock) · ${id}`);
+        }}
+      >
+        + Agregar red
+      </button>
+    </Card>
   );
 }
 
@@ -278,6 +178,10 @@ function PanelCalFilters({ dash }) {
           setProgress(0);
           setLogs(["[CAL] Inicio de rutina de filtros…"]);
           setRunning(true);
+          dash.startCalibrationLed(
+            CALIBRATION_LED.FILTERS.pattern,
+            CALIBRATION_LED.FILTERS.color
+          );
           dash.appendLog("[CAPTURE] Calibración filtros · run mock");
         }}
         className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 font-semibold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] transition hover:brightness-110 disabled:opacity-50"
@@ -305,100 +209,110 @@ function PanelCalFilters({ dash }) {
   );
 }
 
-function PanelCalFocus({ dash }) {
-  const [filter, setFilter] = useState("550 nm");
+function PanelCalFocusAperture({ dash }) {
+  const [wl, setWl] = useState(550);
+  const activeFilter = WAVELENGTH_FILTERS.find((w) => w.nm === wl) ?? WAVELENGTH_FILTERS[1];
+  const bars = useMemo(() => Array.from({ length: 24 }, () => 20 + Math.random() * 75), [wl]);
+
   return (
     <div className="space-y-4">
-      <Card title="Calibración de enfoque" subtitle="Vista técnica simulada + enlace WebSocket opcional.">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-slate-500">Filtro activo</span>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-sm text-emerald-800"
-          >
+      <Card
+        title="Calibración de enfoque y diafragma"
+        subtitle="Mismo flujo: ajusta el filtro activo, observa la vista en vivo y confirma cuando termines."
+      >
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Filtro activo
+          </span>
+          <div className="flex flex-wrap gap-2">
             {WAVELENGTH_FILTERS.map((w) => (
-              <option key={w.nm} value={w.label}>
+              <button
+                key={w.nm}
+                type="button"
+                onClick={() => {
+                  setWl(w.nm);
+                  dash.appendLog(
+                    `[CAL] Enfoque/diafragma · filtro ${w.label} seleccionado.`
+                  );
+                }}
+                className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
+                  wl === w.nm
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-200"
+                    : "border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
+                }`}
+              >
                 {w.label}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
           <button
             type="button"
-            onClick={() => dash.appendLog("[CAL] Terminar calibración enfoque (mock).")}
-            className="ml-auto rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-950/70"
+            onClick={() =>
+              dash.appendLog("[CAL] Terminar calibración enfoque y diafragma (mock).")
+            }
+            className="ml-auto rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-sm hover:bg-emerald-100"
           >
             Terminar calibración
           </button>
         </div>
-        <ScientificLiveView filterLabel={filter} />
-      </Card>
-      <details className="rounded-2xl border border-slate-200 bg-slate-50">
-        <summary className="cursor-pointer px-4 py-3 font-mono text-sm text-slate-600 hover:text-slate-900">
-          Conexión WebSocket experimental (hardware real)
-        </summary>
-        <div className="border-t border-slate-200 p-4 [&_*]:max-w-none">
-          <FocusLiveTest />
-        </div>
-      </details>
-    </div>
-  );
-}
 
-function PanelCalAperture({ dash }) {
-  const [wl, setWl] = useState(550);
-  const bars = useMemo(() => Array.from({ length: 24 }, () => 20 + Math.random() * 75), [wl]);
-
-  return (
-    <Card title="Calibración de diafragma" subtitle="Selector de banda + vista mock + histograma decorativo.">
-      <div className="flex flex-wrap gap-2">
-        {WAVELENGTH_FILTERS.map((w) => (
-          <button
-            key={w.nm}
-            type="button"
-            onClick={() => {
-              setWl(w.nm);
-              dash.appendLog(`[CAL] Diafragma · filtro ${w.label} seleccionado (mock).`);
-            }}
-            className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
-              wl === w.nm
-                ? "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-200"
-                : "border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
-            }`}
-          >
-            {w.label}
-          </button>
-        ))}
-      </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ScientificLiveView filterLabel={`${wl} nm`} />
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
-            Histograma (mock)
-          </p>
-          <div className="mt-3 flex h-36 items-end gap-0.5">
-            {bars.map((h, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-t bg-gradient-to-t from-slate-300 to-emerald-500/80 opacity-95"
-                style={{ height: `${h}%` }}
-              />
-            ))}
+        <div className="grid gap-4 xl:grid-cols-3">
+          <div className="xl:col-span-2">
+            <FocusLiveTest
+              embedded
+              fixedWsUrl={CAMERA_LIVE_WS_URL}
+              title="Vista en vivo"
+              subtitle={`Ajusta enfoque y diafragma con el filtro ${activeFilter.label} activo.`}
+              showHelp={false}
+              startButtonLabel="Iniciar calibración"
+              onCalibrationStart={() =>
+                dash.startCalibrationLed(
+                  CALIBRATION_LED.FOCUS_APERTURE.pattern,
+                  CALIBRATION_LED.FOCUS_APERTURE.color
+                )
+              }
+            />
           </div>
-          <p className="mt-2 font-mono text-[11px] text-slate-500">
-            Exposición objetivo: {(wl / 42).toFixed(1)} ms (simulado)
-          </p>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
+              Histograma · {activeFilter.label}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Referencia visual mientras calibras (mock hasta conectar telemetría real).
+            </p>
+            <div className="mt-3 flex h-40 items-end gap-0.5">
+              {bars.map((h, i) => (
+                <div
+                  key={i}
+                  className="flex-1 rounded-t bg-gradient-to-t from-slate-300 to-emerald-500/80"
+                  style={{ height: `${h}%` }}
+                />
+              ))}
+            </div>
+            <dl className="mt-4 space-y-2 font-mono text-xs text-slate-600">
+              <div className="flex justify-between">
+                <dt>Exposición objetivo</dt>
+                <dd className="text-emerald-700">{(wl / 42).toFixed(1)} ms</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt>Enfoque</dt>
+                <dd className="text-slate-500">manual</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt>Diafragma</dt>
+                <dd className="text-slate-500">por filtro</dd>
+              </div>
+            </dl>
+          </div>
         </div>
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
 function PanelCalWhite({ dash }) {
   const [phase, setPhase] = useState("idle");
-  const [fil, setFil] = useState("720 nm");
+  const [liveStarted, setLiveStarted] = useState(false);
 
   const run = () => {
     setPhase("capturing");
@@ -420,35 +334,62 @@ function PanelCalWhite({ dash }) {
   return (
     <Card
       title="Calibración de compensadores blancos"
-      subtitle="Flujo de estados simulado: captura → procesamiento → subida."
+      subtitle="Inicia la calibración para ver la cámara en vivo, luego captura los compensadores."
     >
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1">
-          <span className="font-mono text-[11px] text-slate-500">Filtro</span>
-          <select
-            value={fil}
-            onChange={(e) => setFil(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+      <div className="flex flex-wrap items-center gap-3">
+        {!liveStarted ? (
+          <button
+            type="button"
+            onClick={() => {
+              setLiveStarted(true);
+              dash.startCalibrationLed(
+                CALIBRATION_LED.WHITE.pattern,
+                CALIBRATION_LED.WHITE.color
+              );
+              dash.appendLog("[CAL] Compensadores blancos · iniciando vista en vivo…");
+            }}
+            className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700"
           >
-            {WAVELENGTH_FILTERS.map((w) => (
-              <option key={w.nm} value={w.label}>
-                {w.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Iniciar calibración
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={run}
-          disabled={phase !== "idle"}
+          disabled={!liveStarted || phase !== "idle"}
           className="rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg disabled:opacity-40"
         >
           Capturar compensadores
         </button>
       </div>
-      <div className="mt-4">
-        <ScientificLiveView filterLabel={fil} />
-      </div>
+
+      {liveStarted ? (
+        <div className="mt-4">
+          <FocusLiveTest
+            embedded
+            fixedWsUrl={CAMERA_LIVE_WS_URL}
+            autoStart
+            hideStartButton
+            hideHeader
+            showHelp={false}
+            title=""
+            subtitle=""
+            startButtonLabel="Iniciar calibración"
+            stopButtonLabel="Detener calibración"
+            onCalibrationStart={() =>
+              dash.startCalibrationLed(
+                CALIBRATION_LED.WHITE.pattern,
+                CALIBRATION_LED.WHITE.color
+              )
+            }
+          />
+        </div>
+      ) : (
+        <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          Pulsa «Iniciar calibración» para conectar la vista en vivo de la cámara.
+        </p>
+      )}
+
       <dl className="mt-4 grid gap-2 font-mono text-sm sm:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
           <dt className="text-[10px] uppercase text-slate-500">Captura</dt>
@@ -456,11 +397,11 @@ function PanelCalWhite({ dash }) {
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
           <dt className="text-[10px] uppercase text-slate-500">Procesamiento</dt>
-          <dd className="text-amber-300">{phase === "processing" ? "en curso" : "—"}</dd>
+          <dd className="text-amber-700">{phase === "processing" ? "en curso" : "—"}</dd>
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
           <dt className="text-[10px] uppercase text-slate-500">Subida</dt>
-          <dd className="text-violet-300">{phase === "uploading" ? "subiendo" : "—"}</dd>
+          <dd className="text-violet-700">{phase === "uploading" ? "subiendo" : "—"}</dd>
         </div>
       </dl>
     </Card>
@@ -492,41 +433,45 @@ function PanelCaptureSingle({ dash }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Adquisición en vivo" subtitle="Panel izquierdo · vista técnica">
           <ScientificLiveView filterLabel={filt} />
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="mt-4 flex flex-col gap-1">
+            <span className="font-mono text-[11px] text-slate-500">Filtro</span>
+            <select
+              value={filt}
+              onChange={(e) => setFilt(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+            >
+              {WAVELENGTH_FILTERS.map((w) => (
+                <option key={w.nm} value={w.label}>
+                  {w.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </Card>
+        <Card title="Parámetros de captura" subtitle="Nombre y exposición de este cubo">
+          <div className="grid gap-4">
             <label className="flex flex-col gap-1">
-              <span className="font-mono text-[11px] text-slate-500">Filtro</span>
-              <select
-                value={filt}
-                onChange={(e) => setFilt(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
-              >
-                {WAVELENGTH_FILTERS.map((w) => (
-                  <option key={w.nm} value={w.label}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
+              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                Nombre de captura
+              </span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+              />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="font-mono text-[11px] text-slate-500">Exposición (ms)</span>
+              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                Tiempo de exposición (ms)
+              </span>
               <input
                 type="number"
                 value={exp}
                 onChange={(e) => setExp(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
               />
             </label>
           </div>
-        </Card>
-        <Card title="Metadatos de captura" subtitle="Panel derecho · configuración de sesión">
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[11px] text-slate-500">Nombre de cubo</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900"
-            />
-          </label>
           <dl className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-400">
             <div className="flex justify-between">
               <dt>UUID sesión</dt>
@@ -575,6 +520,11 @@ function PanelCaptureContinuous({ dash }) {
   const [elapsed, setElapsed] = useState(0);
   const [cubes, setCubes] = useState(0);
   const [events, setEvents] = useState([]);
+  const [name, setName] = useState("secuencia_estufa_A12");
+  const [exp, setExp] = useState("14");
+  const [intervalSec, setIntervalSec] = useState("8");
+
+  const intervalMs = Math.max(500, Number.parseFloat(intervalSec) * 1000 || 8000);
 
   useEffect(() => {
     if (mission !== "running") return;
@@ -592,18 +542,68 @@ function PanelCaptureContinuous({ dash }) {
         const next = c + 1;
         const label = new Date().toLocaleTimeString("es", { hour12: false });
         setEvents((ev) =>
-          [{ t: label, msg: `Cubo #${next} adquirido (mock)` }, ...ev].slice(0, 12)
+          [
+            {
+              t: label,
+              msg: `Cubo #${next} · ${name} · ${exp} ms (mock)`,
+            },
+            ...ev,
+          ].slice(0, 12)
         );
-        dash.appendLog(`[CAPTURE] Secuencia · cubo índice ${next}`);
+        dash.appendLog(
+          `[CAPTURE] Secuencia · cubo ${next} · ${name} · exposición ${exp} ms`
+        );
         return next;
       });
-    }, 4500);
+    }, intervalMs);
     return () => window.clearInterval(id);
-  }, [mission, dash]);
+  }, [mission, dash, intervalMs, name, exp]);
 
   return (
     <div className="space-y-4">
-      <Card title="Captura continua" subtitle="Modo misión · temporizador y timeline simulados.">
+      <Card title="Parámetros de captura" subtitle="Nombre y exposición de la secuencia">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+              Nombre de captura
+            </span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={mission === "running"}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 disabled:bg-slate-100 disabled:text-slate-500"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+              Tiempo de exposición (ms)
+            </span>
+            <input
+              type="number"
+              value={exp}
+              onChange={(e) => setExp(e.target.value)}
+              disabled={mission === "running"}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 disabled:bg-slate-100 disabled:text-slate-500"
+            />
+          </label>
+        </div>
+      </Card>
+
+      <Card title="Secuencia" subtitle="Intervalo entre capturas y control de misión.">
+        <label className="mb-4 flex max-w-xs flex-col gap-1">
+          <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+            Intervalo entre capturas (s)
+          </span>
+          <input
+            type="number"
+            min="0.5"
+            step="0.5"
+            value={intervalSec}
+            onChange={(e) => setIntervalSec(e.target.value)}
+            disabled={mission === "running"}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 disabled:bg-slate-100 disabled:text-slate-500"
+          />
+        </label>
         <div className="grid gap-4 lg:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-1">
             <p className="font-mono text-[10px] uppercase text-slate-500">Tiempo total</p>
@@ -620,7 +620,7 @@ function PanelCaptureContinuous({ dash }) {
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="font-mono text-[10px] uppercase text-slate-500">Intervalo</p>
-            <p className="mt-1 font-mono text-xl text-slate-200">4.5 s (mock)</p>
+            <p className="mt-1 font-mono text-xl text-slate-800">{intervalSec} s</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="font-mono text-[10px] uppercase text-slate-500">Estado misión</p>
@@ -700,17 +700,12 @@ function PanelCaptureContinuous({ dash }) {
 function PanelLive() {
   return (
     <div className="space-y-4">
-      <Card title="Vista en vivo" subtitle="Preview técnico simulado + opción de stream real.">
-        <ScientificLiveView filterLabel="550 nm" />
-        <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50">
-          <summary className="cursor-pointer px-4 py-3 font-mono text-sm text-slate-600 hover:text-slate-900">
-            Stream JPEG por WebSocket (focus_live_server.py)
-          </summary>
-          <div className="border-t border-slate-200 p-4">
-            <FocusLiveTest />
-          </div>
-        </details>
-      </Card>
+      <FocusLiveTest
+        fixedWsUrl={CAMERA_LIVE_WS_URL}
+        title="Vista en vivo"
+        subtitle="Stream JPEG de la cámara multiespectral en tiempo real."
+        showHelp
+      />
     </div>
   );
 }
@@ -789,10 +784,8 @@ export default function CameraSectionPanels({ section, dash }) {
       return <PanelConfig dash={dash} />;
     case CAMERA_SECTION_IDS.CAL_FILTERS:
       return <PanelCalFilters dash={dash} />;
-    case CAMERA_SECTION_IDS.CAL_FOCUS:
-      return <PanelCalFocus dash={dash} />;
-    case CAMERA_SECTION_IDS.CAL_APERTURE:
-      return <PanelCalAperture dash={dash} />;
+    case CAMERA_SECTION_IDS.CAL_FOCUS_APERTURE:
+      return <PanelCalFocusAperture dash={dash} />;
     case CAMERA_SECTION_IDS.CAL_WHITE:
       return <PanelCalWhite dash={dash} />;
     case CAMERA_SECTION_IDS.CAPTURE_SINGLE:

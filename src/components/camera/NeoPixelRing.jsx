@@ -6,7 +6,7 @@ const COLOR_CLASS = {
   emerald: "fill-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.85)]",
   blue: "fill-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.85)]",
   yellow: "fill-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.85)]",
-  white: "fill-slate-200 shadow-[0_0_6px_rgba(148,163,184,0.5)]",
+  white: "fill-white shadow-[0_0_12px_rgba(255,255,255,1)]",
   cyan: "fill-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.85)]",
 };
 

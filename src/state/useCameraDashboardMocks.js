@@ -31,6 +31,13 @@ export function useCameraDashboardMocks() {
     setLogs((prev) => [...prev.slice(-400), `[${ts()}] ${line}`]);
   }, []);
 
+  /** LED del header: patrón + color blanco durante calibración. */
+  const startCalibrationLed = useCallback((pattern, colorKey = "white") => {
+    setLedPattern(pattern);
+    setLedColor(colorKey);
+    setGlobalStatusKey("calibrating");
+  }, []);
+
   useEffect(() => {
     if (logEndRef.current) {
       logEndRef.current.scrollTop = logEndRef.current.scrollHeight;
@@ -63,6 +70,7 @@ export function useCameraDashboardMocks() {
     setLedPattern,
     ledColor,
     setLedColor,
+    startCalibrationLed,
     shutdownOpen,
     setShutdownOpen,
     nav,
