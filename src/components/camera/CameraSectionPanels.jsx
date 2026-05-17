@@ -3,6 +3,7 @@ import ScientificLiveView from "@/components/camera/ScientificLiveView.jsx";
 import FocusLiveTest from "@/components/FocusLiveTest.jsx";
 import OpticalLiveView from "@/components/camera/OpticalLiveView.jsx";
 import NeoPixelRing from "@/components/camera/NeoPixelRing.jsx";
+import PanelCalWhite from "@/components/camera/PanelCalWhite.jsx";
 import { useOpticalCalibration } from "@/hooks/useOpticalCalibration";
 import {
   CALIBRATION_LED,
@@ -468,104 +469,6 @@ function PanelCalFocusAperture({ dash }) {
         </div>
       </Card>
     </div>
-  );
-}
-
-function PanelCalWhite({ dash }) {
-  const [phase, setPhase] = useState("idle");
-  const [liveStarted, setLiveStarted] = useState(false);
-
-  const run = () => {
-    setPhase("capturing");
-    dash.appendLog("[CAPTURE] Blancos · capturando placas…");
-    window.setTimeout(() => {
-      setPhase("processing");
-      dash.appendLog("[PROC] Compensación espectral…");
-    }, 900);
-    window.setTimeout(() => {
-      setPhase("uploading");
-      dash.appendLog("[UPLOAD] Subiendo coeficientes (mock)…");
-    }, 1800);
-    window.setTimeout(() => {
-      setPhase("idle");
-      dash.appendLog("[OK] Compensadores aplicados (mock).");
-    }, 2600);
-  };
-
-  return (
-    <Card
-      title="Calibración de compensadores blancos"
-      subtitle="Inicia la calibración para ver la cámara en vivo, luego captura los compensadores."
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        {!liveStarted ? (
-          <button
-            type="button"
-            onClick={() => {
-              setLiveStarted(true);
-              dash.startCalibrationLed(
-                CALIBRATION_LED.WHITE.pattern,
-                CALIBRATION_LED.WHITE.color
-              );
-              dash.appendLog("[CAL] Compensadores blancos · iniciando vista en vivo…");
-            }}
-            className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700"
-          >
-            Iniciar calibración
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={run}
-          disabled={!liveStarted || phase !== "idle"}
-          className="rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg disabled:opacity-40"
-        >
-          Capturar compensadores
-        </button>
-      </div>
-
-      {liveStarted ? (
-        <div className="mt-4">
-          <FocusLiveTest
-            embedded
-            fixedWsUrl={CAMERA_LIVE_WS_URL}
-            autoStart
-            hideStartButton
-            hideHeader
-            showHelp={false}
-            title=""
-            subtitle=""
-            startButtonLabel="Iniciar calibración"
-            stopButtonLabel="Detener calibración"
-            onCalibrationStart={() =>
-              dash.startCalibrationLed(
-                CALIBRATION_LED.WHITE.pattern,
-                CALIBRATION_LED.WHITE.color
-              )
-            }
-          />
-        </div>
-      ) : (
-        <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          Pulsa «Iniciar calibración» para conectar la vista en vivo de la cámara.
-        </p>
-      )}
-
-      <dl className="mt-4 grid gap-2 font-mono text-sm sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <dt className="text-[10px] uppercase text-slate-500">Captura</dt>
-          <dd className="text-emerald-700">{phase === "capturing" ? "activa" : "idle"}</dd>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <dt className="text-[10px] uppercase text-slate-500">Procesamiento</dt>
-          <dd className="text-amber-700">{phase === "processing" ? "en curso" : "—"}</dd>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <dt className="text-[10px] uppercase text-slate-500">Subida</dt>
-          <dd className="text-violet-700">{phase === "uploading" ? "subiendo" : "—"}</dd>
-        </div>
-      </dl>
-    </Card>
   );
 }
 

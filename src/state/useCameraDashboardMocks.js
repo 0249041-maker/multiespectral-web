@@ -24,6 +24,8 @@ export function useCameraDashboardMocks() {
   const [ledPattern, setLedPattern] = useState("spinner");
   const [ledColor, setLedColor] = useState("emerald");
   const [shutdownOpen, setShutdownOpen] = useState(false);
+  /** Compensador blanco seleccionado desde Storage (`white_compensators/<carpeta>/`). */
+  const [activeWhiteCompensator, setActiveWhiteCompensator] = useState(null);
 
   const logEndRef = useRef(null);
 
@@ -81,6 +83,8 @@ export function useCameraDashboardMocks() {
     finishCalibrationLed,
     shutdownOpen,
     setShutdownOpen,
+    activeWhiteCompensator,
+    setActiveWhiteCompensator,
     nav,
   };
 }

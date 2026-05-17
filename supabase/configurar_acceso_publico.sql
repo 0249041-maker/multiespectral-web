@@ -36,6 +36,20 @@ ON CONFLICT (id) DO UPDATE SET
   file_size_limit = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
+-- Compensadores blancos: una carpeta por sesión (Raspberry / calibración)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'white_compensators',
+  'white_compensators',
+  true,
+  52428800,
+  ARRAY['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/x-ms-bmp']::text[]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = EXCLUDED.public,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
 -- ============================================
 -- 1. Tabla captures: permitir lectura anónima
 -- ============================================
@@ -78,13 +92,13 @@ DROP POLICY IF EXISTS "spectral_storage_anon_select" ON storage.objects;
 CREATE POLICY "spectral_storage_anon_select"
   ON storage.objects FOR SELECT
   TO anon
-  USING (bucket_id IN ('capture_image', 'spectral-captures'));
+  USING (bucket_id IN ('capture_image', 'spectral-captures', 'white_compensators'));
 
 DROP POLICY IF EXISTS "spectral_storage_anon_insert" ON storage.objects;
 CREATE POLICY "spectral_storage_anon_insert"
   ON storage.objects FOR INSERT
   TO anon
-  WITH CHECK (bucket_id IN ('capture_image', 'spectral-captures'));
+  WITH CHECK (bucket_id IN ('capture_image', 'spectral-captures', 'white_compensators'));
 
 DROP POLICY IF EXISTS "captures_anon_delete" ON public.captures;
 CREATE POLICY "captures_anon_delete"
@@ -102,7 +116,7 @@ DROP POLICY IF EXISTS "spectral_storage_anon_delete" ON storage.objects;
 CREATE POLICY "spectral_storage_anon_delete"
   ON storage.objects FOR DELETE
   TO anon
-  USING (bucket_id IN ('capture_image', 'spectral-captures'));
+  USING (bucket_id IN ('capture_image', 'spectral-captures', 'white_compensators'));
 
 -- Opcional: columna img_ndvi si no existe
 ALTER TABLE public.capture_images

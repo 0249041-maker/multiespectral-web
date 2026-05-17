@@ -83,6 +83,10 @@ export const GLOBAL_STATUS_LABELS = {
 /** WebSocket de vista en vivo para calibraciones (y stream de cámara en producción). */
 export const CAMERA_LIVE_WS_URL = "wss://camera.multispectralcam.com";
 
+/** Bucket Storage: una carpeta por compensador blanco (Raspberry / capturas). */
+export const WHITE_COMPENSATORS_BUCKET =
+  import.meta.env.VITE_SUPABASE_WHITE_BUCKET || "white_compensators";
+
 /** Patrones LED por tipo de calibración al pulsar «Iniciar calibración». */
 export const CALIBRATION_LED = {
   FILTERS: { pattern: "spinner", color: "white" },
