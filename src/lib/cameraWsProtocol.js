@@ -1,4 +1,4 @@
-import { CAMERA_LIVE_WS_URL } from "@/lib/cameraDashboardConstants";
+import { CAMERA_LIVE_WS_URL, WAVELENGTH_FILTERS } from "@/lib/cameraDashboardConstants";
 
 const WS_URL_STORAGE_KEY = "camera-ws-url";
 
@@ -46,6 +46,36 @@ export function buildCameraCommand(command, commandId, payload = {}) {
 
 export function buildCalibrateFiltersCommand(commandId) {
   return buildCameraCommand("calibrate_filters", commandId, {});
+}
+
+export function buildStartOpticalCalibrationCommand(commandId, exposureMs) {
+  return buildCameraCommand("start_optical_calibration", commandId, {
+    exposure_ms: exposureMs,
+  });
+}
+
+export function buildSetExposureCommand(commandId, exposureMs) {
+  return buildCameraCommand("set_exposure", commandId, { exposure_ms: exposureMs });
+}
+
+export function buildMoveFilterByNmCommand(commandId, filterNm) {
+  return buildCameraCommand("move_filter", commandId, { filter_nm: filterNm });
+}
+
+export function buildMoveFilterByIdCommand(commandId, filterId) {
+  return buildCameraCommand("move_filter", commandId, { filter_id: filterId });
+}
+
+export function buildFinishOpticalCalibrationCommand(commandId) {
+  return buildCameraCommand("finish_optical_calibration", commandId, {});
+}
+
+export function findFilterById(filterId) {
+  return WAVELENGTH_FILTERS.find((f) => f.id === filterId) ?? null;
+}
+
+export function findFilterByNm(filterNm) {
+  return WAVELENGTH_FILTERS.find((f) => f.nm === filterNm) ?? null;
 }
 
 /**

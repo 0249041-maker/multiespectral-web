@@ -1,7 +1,9 @@
 import CameraLogConsole from "@/components/camera/CameraLogConsole.jsx";
 import ScientificLiveView from "@/components/camera/ScientificLiveView.jsx";
 import FocusLiveTest from "@/components/FocusLiveTest.jsx";
+import OpticalLiveView from "@/components/camera/OpticalLiveView.jsx";
 import NeoPixelRing from "@/components/camera/NeoPixelRing.jsx";
+import { useOpticalCalibration } from "@/hooks/useOpticalCalibration";
 import {
   CALIBRATION_LED,
   CAMERA_LIVE_WS_URL,
@@ -257,16 +259,129 @@ function PanelCalFilters({ dash }) {
 }
 
 function PanelCalFocusAperture({ dash }) {
-  const [wl, setWl] = useState(550);
-  const activeFilter = WAVELENGTH_FILTERS.find((w) => w.nm === wl) ?? WAVELENGTH_FILTERS[1];
-  const bars = useMemo(() => Array.from({ length: 24 }, () => 20 + Math.random() * 75), [wl]);
+  const optical = useOpticalCalibration({
+    wsUrl: CAMERA_LIVE_WS_URL,
+    appendLog: dash.appendLog,
+    onSessionStart: () =>
+      dash.startCalibrationLed(
+        CALIBRATION_LED.FOCUS_APERTURE.pattern,
+        CALIBRATION_LED.FOCUS_APERTURE.color
+      ),
+  });
+
+  const bars = useMemo(
+    () => Array.from({ length: 24 }, () => 20 + Math.random() * 75),
+    [optical.activeFilter?.nm]
+  );
+
+  const statusTone =
+    optical.statusText && optical.statusText.toLowerCase().includes("error")
+      ? "text-red-700"
+      : optical.commandPending
+        ? "text-amber-700"
+        : "text-slate-700";
 
   return (
     <div className="space-y-4">
       <Card
         title="Calibración de enfoque y diafragma"
-        subtitle="Mismo flujo: ajusta el filtro activo, observa la vista en vivo y confirma cuando termines."
+        subtitle="Calibración óptica por WebSocket: vista en vivo JPEG + comandos JSON."
       >
+        <p className="mb-3 font-mono text-xs text-slate-500">
+          WebSocket:{" "}
+          <code className="rounded bg-slate-100 px-1 text-emerald-800">{optical.wsUrl}</code>
+          <span className="ml-2">
+            ·{" "}
+            <span className={optical.connected ? "text-emerald-600" : "text-amber-600"}>
+              {optical.connected ? "conectado" : "desconectado"}
+            </span>
+          </span>
+        </p>
+
+        {optical.connectionError ? (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {optical.connectionError}
+            <button
+              type="button"
+              onClick={optical.reconnect}
+              className="ml-2 underline hover:no-underline"
+            >
+              Reintentar
+            </button>
+          </p>
+        ) : null}
+
+        {optical.cameraInfo ? (
+          <dl className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs sm:grid-cols-4">
+            <div>
+              <dt className="text-[10px] uppercase text-slate-500">Cámara</dt>
+              <dd className="text-slate-800">{optical.cameraInfo.camera_id ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] uppercase text-slate-500">Estado</dt>
+              <dd className="text-emerald-700">{optical.cameraInfo.state ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] uppercase text-slate-500">Filtro</dt>
+              <dd className="text-slate-800">
+                {optical.cameraInfo.current_filter_nm != null
+                  ? `${optical.cameraInfo.current_filter_nm} nm`
+                  : optical.activeFilter.label}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[10px] uppercase text-slate-500">Ocupada</dt>
+              <dd>{optical.cameraInfo.busy ? "sí" : "no"}</dd>
+            </div>
+          </dl>
+        ) : null}
+
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          {!optical.sessionActive ? (
+            <button
+              type="button"
+              disabled={optical.controlsDisabled}
+              onClick={optical.startOpticalCalibration}
+              className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Iniciar calibración
+            </button>
+          ) : null}
+
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] uppercase text-slate-500">
+              Exposición (ms)
+            </span>
+            <input
+              type="number"
+              min="1"
+              value={optical.exposureMs}
+              onChange={(e) => optical.setExposureMs(e.target.value)}
+              disabled={!optical.sessionActive || optical.controlsDisabled}
+              className="w-28 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm disabled:bg-slate-100"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!optical.sessionActive || optical.controlsDisabled}
+            onClick={optical.applyExposure}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Aplicar exposición
+          </button>
+
+          {optical.sessionActive ? (
+            <button
+              type="button"
+              disabled={optical.controlsDisabled}
+              onClick={optical.finishOpticalCalibration}
+              className="ml-auto rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-sm hover:bg-emerald-100 disabled:opacity-50"
+            >
+              Terminar calibración
+            </button>
+          ) : null}
+        </div>
+
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Filtro activo
@@ -274,16 +389,13 @@ function PanelCalFocusAperture({ dash }) {
           <div className="flex flex-wrap gap-2">
             {WAVELENGTH_FILTERS.map((w) => (
               <button
-                key={w.nm}
+                key={w.id}
                 type="button"
-                onClick={() => {
-                  setWl(w.nm);
-                  dash.appendLog(
-                    `[CAL] Enfoque/diafragma · filtro ${w.label} seleccionado.`
-                  );
-                }}
-                className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
-                  wl === w.nm
+                disabled={!optical.sessionActive || optical.controlsDisabled}
+                onClick={() => optical.moveFilter(w.id)}
+                className={`rounded-full border px-3 py-1.5 font-mono text-xs transition disabled:opacity-40 ${
+                  (optical.cameraInfo?.current_filter_id ?? optical.selectedFilterId) ===
+                  w.id
                     ? "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-200"
                     : "border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
                 }`}
@@ -292,40 +404,32 @@ function PanelCalFocusAperture({ dash }) {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              dash.appendLog("[CAL] Terminar calibración enfoque y diafragma (mock).")
-            }
-            className="ml-auto rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-sm hover:bg-emerald-100"
-          >
-            Terminar calibración
-          </button>
         </div>
+
+        {optical.statusText ? (
+          <p className={`mb-4 text-sm font-medium ${statusTone}`}>{optical.statusText}</p>
+        ) : null}
 
         <div className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-2">
-            <FocusLiveTest
-              embedded
-              fixedWsUrl={CAMERA_LIVE_WS_URL}
-              title="Vista en vivo"
-              subtitle={`Ajusta enfoque y diafragma con el filtro ${activeFilter.label} activo.`}
-              showHelp={false}
-              startButtonLabel="Iniciar calibración"
-              onCalibrationStart={() =>
-                dash.startCalibrationLed(
-                  CALIBRATION_LED.FOCUS_APERTURE.pattern,
-                  CALIBRATION_LED.FOCUS_APERTURE.color
-                )
+            <OpticalLiveView
+              frameUrl={optical.frameUrl}
+              livePaused={optical.livePaused}
+              switchingFilter={optical.switchingFilter}
+              waiting={optical.sessionActive && !optical.frameUrl}
+              placeholder={
+                optical.sessionActive
+                  ? "Esperando fotogramas de la cámara…"
+                  : "Inicia la calibración óptica para ver la vista en vivo."
               }
             />
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
-              Histograma · {activeFilter.label}
+              Histograma · {optical.activeFilter.label}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Referencia visual mientras calibras (mock hasta conectar telemetría real).
+              Referencia visual mientras calibras (mock hasta telemetría real).
             </p>
             <div className="mt-3 flex h-40 items-end gap-0.5">
               {bars.map((h, i) => (
@@ -338,16 +442,20 @@ function PanelCalFocusAperture({ dash }) {
             </div>
             <dl className="mt-4 space-y-2 font-mono text-xs text-slate-600">
               <div className="flex justify-between">
-                <dt>Exposición objetivo</dt>
-                <dd className="text-emerald-700">{(wl / 42).toFixed(1)} ms</dd>
+                <dt>Exposición</dt>
+                <dd className="text-emerald-700">{optical.exposureMs} ms</dd>
               </div>
               <div className="flex justify-between">
-                <dt>Enfoque</dt>
-                <dd className="text-slate-500">manual</dd>
+                <dt>Sesión óptica</dt>
+                <dd className={optical.sessionActive ? "text-emerald-700" : "text-slate-500"}>
+                  {optical.sessionActive ? "activa" : "inactiva"}
+                </dd>
               </div>
               <div className="flex justify-between">
-                <dt>Diafragma</dt>
-                <dd className="text-slate-500">por filtro</dd>
+                <dt>Vista en vivo</dt>
+                <dd className={optical.liveViewReady ? "text-emerald-700" : "text-slate-500"}>
+                  {optical.liveViewReady ? "recibiendo" : "—"}
+                </dd>
               </div>
             </dl>
           </div>

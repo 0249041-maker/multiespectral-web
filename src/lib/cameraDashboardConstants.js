@@ -92,10 +92,11 @@ export const CALIBRATION_LED = {
   WHITE: { pattern: "blink", color: "white" },
 };
 
+/** Filtros del cubo óptico (IDs alineados con el protocolo WebSocket de la cámara). */
 export const WAVELENGTH_FILTERS = [
-  { nm: 450, label: "450 nm" },
-  { nm: 550, label: "550 nm" },
-  { nm: 650, label: "650 nm" },
-  { nm: 720, label: "720 nm" },
-  { nm: 850, label: "850 nm" },
+  { id: 1, nm: 450, label: "450 nm" },
+  { id: 2, nm: 550, label: "550 nm" },
+  { id: 3, nm: 656, label: "656 nm" },
+  { id: 4, nm: 725, label: "725 nm" },
+  { id: 5, nm: 850, label: "850 nm" },
 ];
