@@ -8,6 +8,7 @@ import {
   CAMERA_SECTION_IDS,
   WAVELENGTH_FILTERS,
 } from "@/lib/cameraDashboardConstants";
+import { useFilterCalibration } from "@/hooks/useFilterCalibration";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 function Card({ title, subtitle, children, className = "" }) {
@@ -147,64 +148,105 @@ function PanelConfig({ dash }) {
 }
 
 function PanelCalFilters({ dash }) {
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [logs, setLogs] = useState([]);
+  const cal = useFilterCalibration({
+    wsUrl: CAMERA_LIVE_WS_URL,
+    appendLog: dash.appendLog,
+  });
 
-  useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => {
-      setProgress((p) => {
-        if (p >= 100) {
-          setRunning(false);
-          dash.appendLog("[OK] Calibración de filtros completada (mock).");
-          return 100;
-        }
-        const next = Math.min(100, p + 7 + Math.random() * 6);
-        if (next > 30 && p <= 30) setLogs((l) => [...l, "[CAL] Normalizando respuesta espectral…"]);
-        if (next > 70 && p <= 70) setLogs((l) => [...l, "[CAL] Verificando bandas NIR…"]);
-        return next;
-      });
-    }, 320);
-    return () => window.clearInterval(id);
-  }, [running, dash]);
+  const statusTone =
+    cal.phase === "success"
+      ? "text-emerald-700"
+      : cal.phase === "error"
+        ? "text-red-700"
+        : cal.isCalibrating
+          ? "text-amber-700"
+          : "text-slate-600";
 
   return (
-    <Card title="Calibración de filtros" subtitle="Secuencia automática simulada con barra de progreso.">
+    <Card
+      title="Calibración de filtros"
+      subtitle="Comando WebSocket calibrate_filters · solo mensajes JSON."
+    >
+      <p className="mb-3 font-mono text-xs text-slate-500">
+        WebSocket:{" "}
+        <code className="rounded bg-slate-100 px-1 text-emerald-800">{cal.wsUrl}</code>
+        <span className="ml-2">
+          ·{" "}
+          <span className={cal.connected ? "text-emerald-600" : "text-amber-600"}>
+            {cal.connected ? "conectado" : "desconectado"}
+          </span>
+        </span>
+      </p>
+
+      {cal.connectionError ? (
+        <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {cal.connectionError}
+          <button
+            type="button"
+            onClick={cal.reconnect}
+            className="ml-2 underline hover:no-underline"
+          >
+            Reintentar
+          </button>
+        </p>
+      ) : null}
+
+      {cal.cameraInfo ? (
+        <dl className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs sm:grid-cols-3">
+          <div>
+            <dt className="text-[10px] uppercase text-slate-500">Cámara</dt>
+            <dd className="text-slate-800">{cal.cameraInfo.camera_id ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase text-slate-500">Estado</dt>
+            <dd className="text-emerald-700">{cal.cameraInfo.state ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase text-slate-500">Filtro actual</dt>
+            <dd className="text-slate-800">
+              {cal.cameraInfo.current_filter_nm != null
+                ? `${cal.cameraInfo.current_filter_nm} nm`
+                : "—"}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
       <button
         type="button"
-        disabled={running}
+        disabled={cal.buttonDisabled}
         onClick={() => {
-          setProgress(0);
-          setLogs(["[CAL] Inicio de rutina de filtros…"]);
-          setRunning(true);
           dash.startCalibrationLed(
             CALIBRATION_LED.FILTERS.pattern,
             CALIBRATION_LED.FILTERS.color
           );
-          dash.appendLog("[CAPTURE] Calibración filtros · run mock");
+          cal.startCalibration();
         }}
         className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 font-semibold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] transition hover:brightness-110 disabled:opacity-50"
       >
-        Iniciar calibración
+        {cal.isCalibrating ? "Calibrando…" : "Iniciar calibración"}
       </button>
-      <div className="mt-4">
-        <div className="mb-1 flex justify-between font-mono text-[11px] text-slate-500">
-          <span>Progreso</span>
-          <span>{Math.round(progress)}%</span>
+
+      {cal.statusText ? (
+        <p className={`mt-4 text-sm font-medium ${statusTone}`}>{cal.statusText}</p>
+      ) : (
+        <p className="mt-4 text-sm text-slate-500">
+          Pulsa el botón para enviar el comando de calibración del cubo de filtros.
+        </p>
+      )}
+
+      {cal.isCalibrating ? (
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-emerald-500 to-teal-400" />
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-[width] duration-300"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
-      <div className="mt-4 rounded-xl border border-slate-200 bg-black/40 p-3 font-mono text-[11px] text-slate-400">
-        {logs.map((l, i) => (
-          <p key={`${i}-${l}`}>{l}</p>
-        ))}
-      </div>
+      ) : null}
+
+      {import.meta.env.DEV ? (
+        <p className="mt-4 font-mono text-[10px] text-slate-400">
+          Debug: define <code>VITE_CAMERA_WS_URL</code> o localStorage{" "}
+          <code>camera-ws-url</code> para otra URL.
+        </p>
+      ) : null}
     </Card>
   );
 }
