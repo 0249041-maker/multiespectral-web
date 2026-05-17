@@ -18,9 +18,9 @@ const STATUS = {
 
 /**
  * WebSocket JSON command flow for filter wheel calibration.
- * @param {{ wsUrl?: string, appendLog?: (line: string) => void }} options
+ * @param {{ wsUrl?: string, appendLog?: (line: string) => void, onCalibrationSuccess?: () => void }} options
  */
-export function useFilterCalibration({ wsUrl: fixedWsUrl, appendLog } = {}) {
+export function useFilterCalibration({ wsUrl: fixedWsUrl, appendLog, onCalibrationSuccess } = {}) {
   const resolvedUrl = resolveCameraWsUrl(fixedWsUrl);
 
   const socketRef = useRef(null);
@@ -28,6 +28,7 @@ export function useFilterCalibration({ wsUrl: fixedWsUrl, appendLog } = {}) {
   const pendingCalibrationRef = useRef(false);
   const unmountedRef = useRef(false);
   const appendLogRef = useRef(appendLog);
+  const onSuccessRef = useRef(onCalibrationSuccess);
 
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState("");
@@ -38,6 +39,10 @@ export function useFilterCalibration({ wsUrl: fixedWsUrl, appendLog } = {}) {
   useEffect(() => {
     appendLogRef.current = appendLog;
   }, [appendLog]);
+
+  useEffect(() => {
+    onSuccessRef.current = onCalibrationSuccess;
+  }, [onCalibrationSuccess]);
 
   const log = useCallback((line) => {
     appendLogRef.current?.(line);
@@ -115,6 +120,7 @@ export function useFilterCalibration({ wsUrl: fixedWsUrl, appendLog } = {}) {
       if (type === "command_done") {
         if (msg.success) {
           finishCalibration(STATUS.SUCCESS, "Filter calibration completed successfully");
+          onSuccessRef.current?.();
           log("[WS] command_done · success");
           if (msg.result) {
             setCameraInfo((prev) => ({

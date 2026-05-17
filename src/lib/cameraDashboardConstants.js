@@ -86,6 +86,8 @@ export const CAMERA_LIVE_WS_URL = "wss://camera.multispectralcam.com";
 /** Patrones LED por tipo de calibración al pulsar «Iniciar calibración». */
 export const CALIBRATION_LED = {
   FILTERS: { pattern: "spinner", color: "white" },
+  /** Al terminar calibración de filtros con éxito. */
+  FILTERS_DONE: { pattern: "blink", color: "green" },
   FOCUS_APERTURE: { pattern: "blink", color: "white" },
   WHITE: { pattern: "blink", color: "white" },
 };

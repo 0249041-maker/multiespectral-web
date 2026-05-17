@@ -31,11 +31,18 @@ export function useCameraDashboardMocks() {
     setLogs((prev) => [...prev.slice(-400), `[${ts()}] ${line}`]);
   }, []);
 
-  /** LED del header: patrón + color blanco durante calibración. */
+  /** LED del header: patrón + color durante calibración. */
   const startCalibrationLed = useCallback((pattern, colorKey = "white") => {
     setLedPattern(pattern);
     setLedColor(colorKey);
     setGlobalStatusKey("calibrating");
+  }, []);
+
+  /** LED al finalizar calibración con éxito (p. ej. blink verde). */
+  const finishCalibrationLed = useCallback((pattern, colorKey = "green") => {
+    setLedPattern(pattern);
+    setLedColor(colorKey);
+    setGlobalStatusKey("online");
   }, []);
 
   useEffect(() => {
@@ -71,6 +78,7 @@ export function useCameraDashboardMocks() {
     ledColor,
     setLedColor,
     startCalibrationLed,
+    finishCalibrationLed,
     shutdownOpen,
     setShutdownOpen,
     nav,

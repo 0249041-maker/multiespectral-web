@@ -151,6 +151,11 @@ function PanelCalFilters({ dash }) {
   const cal = useFilterCalibration({
     wsUrl: CAMERA_LIVE_WS_URL,
     appendLog: dash.appendLog,
+    onCalibrationSuccess: () =>
+      dash.finishCalibrationLed(
+        CALIBRATION_LED.FILTERS_DONE.pattern,
+        CALIBRATION_LED.FILTERS_DONE.color
+      ),
   });
 
   const statusTone =
