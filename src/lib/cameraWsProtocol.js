@@ -78,6 +78,10 @@ export function buildCaptureWhiteReferenceCommand(commandId, name = "white_refer
   return buildCameraCommand("capture_white_reference", commandId, { name });
 }
 
+export function buildFinishWhiteCalibrationCommand(commandId) {
+  return buildCameraCommand("finish_white_calibration", commandId, {});
+}
+
 /**
  * @param {string} name
  * @param {number} exposureMs

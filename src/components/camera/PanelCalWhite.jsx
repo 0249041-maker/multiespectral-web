@@ -1,5 +1,9 @@
 import OpticalLiveView from "@/components/camera/OpticalLiveView.jsx";
 import SupabaseImage from "@/components/advanced/SupabaseImage.jsx";
+import {
+  useFinishWhiteCalibration,
+  useResetFinishOnReferenceChange,
+} from "@/hooks/useFinishWhiteCalibration";
 import { useWhiteCalibration } from "@/hooks/useWhiteCalibration";
 import {
   CALIBRATION_LED,
@@ -336,6 +340,24 @@ function PanelCalWhitePast({ dash }) {
 export default function PanelCalWhite({ dash }) {
   const [tab, setTab] = useState("new");
 
+  const finish = useFinishWhiteCalibration({
+    wsUrl: CAMERA_LIVE_WS_URL,
+    appendLog: dash.appendLog,
+    onFinished: () => {
+      dash.finishCalibrationLed(
+        CALIBRATION_LED.WHITE_DONE.pattern,
+        CALIBRATION_LED.WHITE_DONE.color
+      );
+    },
+  });
+
+  useResetFinishOnReferenceChange(finish, dash.activeWhiteReference?.cube_id);
+
+  const canAccept =
+    Boolean(dash.activeWhiteReference?.compensators) &&
+    !finish.finalized &&
+    !finish.commandPending;
+
   return (
     <Card
       title="Calibración de compensadores blancos"
@@ -368,6 +390,40 @@ export default function PanelCalWhite({ dash }) {
 
       {tab === "new" ? <PanelCalWhiteNew key="white-new" dash={dash} /> : null}
       {tab === "past" ? <PanelCalWhitePast key="white-past" dash={dash} /> : null}
+
+      <div className="mt-6 border-t border-slate-200 pt-5">
+        {finish.finalized ? (
+          <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            Calibración de blancos finalizada. La cámara está en línea y los valores de
+            compensación quedaron aceptados.
+          </p>
+        ) : null}
+
+        {!dash.activeWhiteReference?.compensators ? (
+          <p className="mb-3 text-sm text-slate-500">
+            Calcula o selecciona un compensador blanco antes de aceptar los valores en la cámara.
+          </p>
+        ) : null}
+
+        {finish.finishError ? (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {finish.finishError}
+          </p>
+        ) : null}
+
+        {finish.commandPending && finish.statusText ? (
+          <p className="mb-3 text-sm font-medium text-amber-700">{finish.statusText}</p>
+        ) : null}
+
+        <button
+          type="button"
+          disabled={!canAccept}
+          onClick={finish.finishWhiteCalibration}
+          className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3 text-base font-semibold text-white shadow-sm hover:brightness-105 disabled:opacity-50 sm:w-auto"
+        >
+          {finish.commandPending ? "Enviando a la cámara…" : "Aceptar valores"}
+        </button>
+      </div>
     </Card>
   );
 }
