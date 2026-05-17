@@ -34,6 +34,18 @@ export function createCommandId() {
   return `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
+export function createStartCubeModeCommandId() {
+  return `cmd_start_cube_mode_${Date.now()}`;
+}
+
+export function createCaptureCubeCommandId() {
+  return `cmd_capture_cube_${Date.now()}`;
+}
+
+export function createFinishCubeModeCommandId() {
+  return `cmd_finish_cube_mode_${Date.now()}`;
+}
+
 /** @param {string} command @param {Record<string, unknown>} [payload] */
 export function buildCameraCommand(command, commandId, payload = {}) {
   return {

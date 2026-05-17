@@ -1,5 +1,4 @@
 import CameraLogConsole from "@/components/camera/CameraLogConsole.jsx";
-import ScientificLiveView from "@/components/camera/ScientificLiveView.jsx";
 import FocusLiveTest from "@/components/FocusLiveTest.jsx";
 import OpticalLiveView from "@/components/camera/OpticalLiveView.jsx";
 import NeoPixelRing from "@/components/camera/NeoPixelRing.jsx";
@@ -13,7 +12,7 @@ import {
   WAVELENGTH_FILTERS,
 } from "@/lib/cameraDashboardConstants";
 import { useFilterCalibration } from "@/hooks/useFilterCalibration";
-import { useCaptureCube } from "@/hooks/useCaptureCube";
+import { useCubeCaptureMode } from "@/hooks/useCubeCaptureMode";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 function Card({ title, subtitle, children, className = "" }) {
@@ -486,13 +485,9 @@ function PanelCalFocusAperture({ dash }) {
 }
 
 function PanelCaptureSingle({ dash }) {
-  const [name, setName] = useState("cubo_estufa_A12");
-  const [filt, setFilt] = useState("656 nm");
-  const defaultExp =
-    dash.opticalExposureMs != null ? String(dash.opticalExposureMs) : "14";
-  const [exp, setExp] = useState(defaultExp);
+  const [name, setName] = useState("rancho_lado_norte_1");
 
-  const capture = useCaptureCube({
+  const capture = useCubeCaptureMode({
     wsUrl: CAMERA_LIVE_WS_URL,
     appendLog: dash.appendLog,
     activeWhiteReference: dash.activeWhiteReference,
@@ -501,99 +496,194 @@ function PanelCaptureSingle({ dash }) {
       dash.completeWorkflowStep(CAMERA_WORKFLOW_STEP_IDS.CAPTURE),
   });
 
-  const phase = capture.commandPending
+  const phase = capture.capturingCube
     ? "capturing"
-    : capture.lastCaptureOk
-      ? "success"
-      : "idle";
+    : capture.commandPending && capture.activeCommandName === "capture_cube"
+      ? "capturing"
+      : capture.lastCaptureOk
+        ? "success"
+        : capture.modeActive
+          ? "ready"
+          : "starting";
+
+  const statusTone =
+    capture.connectionError || capture.statusText?.toLowerCase().includes("error")
+      ? "text-red-700"
+      : capture.commandPending || capture.capturingCube
+        ? "text-amber-700"
+        : "text-slate-700";
 
   const runCapture = useCallback(() => {
-    const exposure = Number.parseFloat(exp) || dash.opticalExposureMs || 14;
     if (!capture.canCapture) {
       dash.appendLog("[ERR] Define calibración de blancos antes de capturar el cubo.");
       return;
     }
-    capture.captureCube(name, exposure);
-  }, [capture, name, exp, dash]);
+    capture.captureCube(name);
+  }, [capture, name, dash]);
 
   return (
     <div className="space-y-4 pb-24">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Adquisición en vivo" subtitle="Panel izquierdo · vista técnica">
-          <ScientificLiveView filterLabel={filt} />
-          <label className="mt-4 flex flex-col gap-1">
-            <span className="font-mono text-[11px] text-slate-500">Filtro</span>
-            <select
-              value={filt}
-              onChange={(e) => setFilt(e.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+      <Card
+        title="Captura de cubo (1×)"
+        subtitle="WebSocket · start_cube_capture_mode al entrar · finish_cube_capture_mode al salir."
+      >
+        <p className="mb-3 font-mono text-xs text-slate-500">
+          WebSocket:{" "}
+          <code className="rounded bg-slate-100 px-1 text-emerald-800">{capture.wsUrl}</code>
+          <span className="ml-2">
+            ·{" "}
+            <span className={capture.connected ? "text-emerald-600" : "text-amber-600"}>
+              {capture.connected ? "conectado" : "desconectado"}
+            </span>
+          </span>
+        </p>
+
+        {capture.connectionError ? (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {capture.connectionError}
+            <button
+              type="button"
+              onClick={capture.reconnect}
+              className="ml-2 font-semibold underline"
             >
-              {WAVELENGTH_FILTERS.map((w) => (
-                <option key={w.nm} value={w.label}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
+              Reintentar
+            </button>
+          </p>
+        ) : null}
+
+        {!dash.activeWhiteReference?.compensators ? (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Completa la <strong>calibración de blancos</strong> antes de capturar. El payload solo
+            incluye compensadores numéricos (bandas 450–850, 725 nm).
+          </p>
+        ) : null}
+
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+              Exposición (ms)
+            </span>
+            <input
+              type="number"
+              min="1"
+              value={capture.exposureMs}
+              onChange={(e) => capture.setExposureMs(e.target.value)}
+              disabled={capture.controlsDisabled}
+              className="w-28 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm disabled:bg-slate-100"
+            />
           </label>
-        </Card>
-        <Card title="Parámetros de captura" subtitle="Nombre y exposición de este cubo">
-          <div className="grid gap-4">
-            <label className="flex flex-col gap-1">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
-                Nombre de captura
-              </span>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
-                Tiempo de exposición (ms)
-              </span>
-              <input
-                type="number"
-                value={exp}
-                onChange={(e) => setExp(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
-              />
-            </label>
+          <button
+            type="button"
+            disabled={capture.controlsDisabled}
+            onClick={capture.applyExposure}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Aplicar exposición
+          </button>
+          <span className="font-mono text-xs text-slate-500">
+            Modo:{" "}
+            <span className={capture.modeActive ? "text-emerald-700" : "text-amber-700"}>
+              {capture.modeActive
+                ? capture.cameraInfo?.state ?? "cube_capture_mode"
+                : "iniciando…"}
+            </span>
+          </span>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Filtro preview
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {WAVELENGTH_FILTERS.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                disabled={capture.controlsDisabled}
+                onClick={() => capture.moveFilter(w.id)}
+                className={`rounded-full border px-3 py-1.5 font-mono text-xs transition disabled:opacity-40 ${
+                  (capture.cameraInfo?.current_filter_id ?? capture.selectedFilterId) === w.id
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-200"
+                    : "border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
+                }`}
+              >
+                {w.label}
+              </button>
+            ))}
           </div>
-          <dl className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-400">
-            <div className="flex justify-between">
-              <dt>UUID sesión</dt>
-              <dd className="text-emerald-700">mxc-7f3a·mock</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt>Referencia blanca</dt>
-              <dd className={dash.activeWhiteReference ? "text-emerald-700" : "text-amber-700"}>
-                {dash.activeWhiteReference?.cube_id ?? "sin definir"}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt>Estado</dt>
-              <dd className="uppercase text-emerald-400">{phase}</dd>
-            </div>
-          </dl>
-        </Card>
-      </div>
+        </div>
+
+        {capture.statusText ? (
+          <p className={`mb-4 text-sm font-medium ${statusTone}`}>{capture.statusText}</p>
+        ) : null}
+
+        <OpticalLiveView
+          frameUrl={capture.frameUrl}
+          livePaused={capture.livePaused}
+          switchingFilter={capture.switchingFilter}
+          capturingCube={capture.capturingCube}
+          waiting={capture.modeActive && !capture.frameUrl}
+          placeholder={
+            capture.modeActive
+              ? "Esperando vista en vivo del modo captura…"
+              : "Conectando y activando modo captura de cubo…"
+          }
+        />
+      </Card>
+
+      <Card title="Parámetros de este cubo" subtitle="Nombre · referencia blanca activa">
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+            Nombre de captura
+          </span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={capture.capturingCube || capture.commandPending}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 disabled:bg-slate-100"
+          />
+        </label>
+        <dl className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-600">
+          <div className="flex justify-between gap-4">
+            <dt>Referencia blanca</dt>
+            <dd className={dash.activeWhiteReference ? "text-emerald-700" : "text-amber-700"}>
+              {dash.activeWhiteReference?.cube_id ?? "sin definir"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt>Filtro activo</dt>
+            <dd className="text-emerald-700">{capture.activeFilter.label}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt>Estado</dt>
+            <dd className="uppercase text-emerald-700">{phase}</dd>
+          </div>
+        </dl>
+      </Card>
 
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md lg:sticky lg:bottom-auto lg:z-0 lg:border-t-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
         <div className="mx-auto flex max-w-7xl flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="font-mono text-[11px] text-slate-500">
+          <p className="font-mono text-[11px] text-slate-500">
             Fase: <span className="text-emerald-700">{phase}</span>
-          </div>
+            {capture.capturingCube ? (
+              <span className="ml-2 text-amber-700">· Capturing cube…</span>
+            ) : null}
+          </p>
           <button
             type="button"
             onClick={runCapture}
-            disabled={capture.commandPending || !capture.canCapture}
+            disabled={
+              capture.commandPending ||
+              capture.capturingCube ||
+              !capture.canCapture ||
+              !capture.modeActive
+            }
             className="rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 px-10 py-4 text-lg font-bold tracking-wide text-white shadow-[0_0_24px_rgba(16,185,129,0.35)] transition hover:brightness-110 disabled:opacity-40"
           >
-            {capture.commandPending ? (
+            {capture.commandPending || capture.capturingCube ? (
               <span className="inline-flex items-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Procesando…
+                Capturando…
               </span>
             ) : (
               "Capturar cubo"

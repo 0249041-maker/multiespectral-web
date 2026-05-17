@@ -30,6 +30,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
   const [frameUrl, setFrameUrl] = useState("");
   const [livePaused, setLivePaused] = useState(false);
   const [switchingFilter, setSwitchingFilter] = useState(false);
+  const [capturingCube, setCapturingCube] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [commandPending, setCommandPending] = useState(false);
   const [activeCommandName, setActiveCommandName] = useState(null);
@@ -114,9 +115,13 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
         livePausedRef.current = true;
         setLivePaused(true);
         const isFilterSwitch = msg.reason === "switching_filter";
+        const isCapturingCube = msg.reason === "capturing_cube";
         setSwitchingFilter(isFilterSwitch);
+        setCapturingCube(isCapturingCube);
         if (isFilterSwitch) {
           log("[WS] live_paused · switching_filter");
+        } else if (isCapturingCube) {
+          log("[WS] live_paused · capturing_cube");
         }
         return;
       }
@@ -125,6 +130,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
         livePausedRef.current = false;
         setLivePaused(false);
         setSwitchingFilter(false);
+        setCapturingCube(false);
         log("[WS] live_resumed");
         return;
       }
@@ -278,10 +284,13 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
   }, [resolvedUrl, flushPendingSend, applyJpegFrame, clearCommand, log]);
 
   const sendCommand = useCallback(
-    (command, payload = {}) => {
+    (command, payload = {}, commandIdOverride) => {
       if (activeCommandRef.current) return false;
 
-      const commandId = createCommandId();
+      const commandId =
+        typeof commandIdOverride === "string" && commandIdOverride.trim()
+          ? commandIdOverride.trim()
+          : createCommandId();
       pendingSendRef.current = { command, payload, commandId };
 
       const socket = socketRef.current;
@@ -322,6 +331,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
     frameUrl,
     livePaused,
     switchingFilter,
+    capturingCube,
     statusText,
     commandPending,
     activeCommandName,

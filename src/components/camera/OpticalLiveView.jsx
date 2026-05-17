@@ -1,16 +1,18 @@
 /**
  * Vista en vivo JPEG con overlay al pausar por cambio de filtro.
- * @param {{ frameUrl?: string, livePaused?: boolean, switchingFilter?: boolean, waiting?: boolean, blanked?: boolean, placeholder?: string }} props
+ * @param {{ frameUrl?: string, livePaused?: boolean, switchingFilter?: boolean, capturingCube?: boolean, waiting?: boolean, blanked?: boolean, placeholder?: string }} props
  */
 export default function OpticalLiveView({
   frameUrl = "",
   livePaused = false,
   switchingFilter = false,
+  capturingCube = false,
   waiting = false,
   blanked = false,
   placeholder = "Esperando vista en vivo…",
 }) {
   const showSwitchOverlay = livePaused && switchingFilter;
+  const showCaptureOverlay = livePaused && capturingCube;
 
   if (blanked) {
     return (
@@ -28,7 +30,7 @@ export default function OpticalLiveView({
           src={frameUrl}
           alt="Vista en vivo de calibración óptica"
           className={`max-h-[min(70vh,520px)] w-full object-contain transition-[filter] duration-300 ${
-            showSwitchOverlay ? "blur-md brightness-90" : ""
+            showSwitchOverlay || showCaptureOverlay ? "blur-md brightness-90" : ""
           }`}
         />
       ) : (
@@ -41,6 +43,14 @@ export default function OpticalLiveView({
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25">
           <p className="rounded-xl border border-white/20 bg-black/55 px-5 py-3 font-mono text-sm font-semibold tracking-wide text-white shadow-lg backdrop-blur-sm">
             Switching filter...
+          </p>
+        </div>
+      ) : null}
+
+      {showCaptureOverlay ? (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30">
+          <p className="rounded-xl border border-white/20 bg-black/55 px-5 py-3 font-mono text-sm font-semibold tracking-wide text-white shadow-lg backdrop-blur-sm">
+            Capturing cube...
           </p>
         </div>
       ) : null}
