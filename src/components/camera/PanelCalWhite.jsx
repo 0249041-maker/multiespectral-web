@@ -14,7 +14,10 @@ import {
 } from "@/lib/cameraDashboardConstants";
 import { getSupabaseEnvDebug } from "@/lib/supabase";
 import { computeCompensatorsFromSession } from "@/lib/whiteCompensatorCompute";
-import { listWhiteCompensatorSessions } from "@/lib/whiteCompensatorsStorage";
+import {
+  deleteWhiteCompensatorSession,
+  listWhiteCompensatorSessions,
+} from "@/lib/whiteCompensatorsStorage";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 function Card({ title, subtitle, children, className = "" }) {
@@ -185,6 +188,7 @@ function PanelCalWhitePast({ dash }) {
   const appendLogRef = useRef(dash.appendLog);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [sessions, setSessions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -240,6 +244,42 @@ function PanelCalWhitePast({ dash }) {
       dash.appendLog(`[ERR] ${msg}`);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const sessionMatchesActive = (session) => {
+    const active = dash.activeWhiteReference;
+    if (!active || !session) return false;
+    return (
+      active.cube_id === session.cubeId ||
+      active.cube_id === session.id ||
+      active.storage_path === session.storagePath
+    );
+  };
+
+  const deleteSession = async (session) => {
+    const label = session.cubeId ?? session.id;
+    const ok = window.confirm(
+      `¿Eliminar el cubo blanco "${label}"?\n\nSe borrará de Supabase y desaparecerá de esta lista.`
+    );
+    if (!ok) return;
+
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteWhiteCompensatorSession(session);
+      setSessions((prev) => prev.filter((s) => s.id !== session.id));
+      if (selectedId === session.id) setSelectedId(null);
+      if (sessionMatchesActive(session)) {
+        dash.setActiveWhiteReference(null);
+      }
+      dash.appendLog?.(`[CAL] Cubo blanco eliminado · ${session.id}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al eliminar";
+      setError(msg);
+      dash.appendLog?.(`[ERR] ${msg}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -316,14 +356,24 @@ function PanelCalWhitePast({ dash }) {
               </div>
             ))}
           </div>
-          <button
-            type="button"
-            disabled={processing}
-            onClick={() => applySession(selected)}
-            className="mt-4 rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50"
-          >
-            {processing ? "Calculando compensadores…" : "Usar esta calibración"}
-          </button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={processing || deleting}
+              onClick={() => applySession(selected)}
+              className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50"
+            >
+              {processing ? "Calculando compensadores…" : "Usar esta calibración"}
+            </button>
+            <button
+              type="button"
+              disabled={processing || deleting}
+              onClick={() => deleteSession(selected)}
+              className="rounded-xl border border-red-300 bg-white px-5 py-2.5 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              {deleting ? "Eliminando…" : "Eliminar cubo"}
+            </button>
+          </div>
         </div>
       ) : null}
 

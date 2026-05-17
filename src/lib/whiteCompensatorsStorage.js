@@ -135,4 +135,53 @@ export async function listWhiteCompensatorSessions() {
   return sessions;
 }
 
+/**
+ * Borra todos los archivos de un cubo blanco en Storage.
+ * @param {Pick<WhiteCompensatorSession, "cameraId" | "cubeId" | "bandFiles" | "storagePath">} session
+ */
+export async function deleteWhiteCompensatorSession(session) {
+  if (!supabase) {
+    throw new Error("Supabase no está configurado");
+  }
+  const { cameraId, cubeId } = session;
+  if (!cameraId || !cubeId) {
+    throw new Error("Sesión de calibración no válida");
+  }
+
+  const prefix = `${cameraId}/${cubeId}`;
+
+  const { data: listed, error: listErr } = await supabase.storage
+    .from(WHITE_COMPENSATORS_BUCKET)
+    .list(prefix, { limit: 50 });
+
+  if (listErr) {
+    throw new Error(formatSupabaseError(listErr));
+  }
+
+  const paths = (listed ?? [])
+    .filter((f) => f.name && !isFolderEntry(f))
+    .map((f) => `${prefix}/${f.name}`);
+
+  if (paths.length === 0 && session.bandFiles?.length) {
+    for (const b of session.bandFiles) {
+      if (b.path) paths.push(b.path);
+    }
+    paths.push(`${prefix}/metadata.json`);
+  }
+
+  if (paths.length === 0) {
+    throw new Error("No hay archivos que borrar en este cubo");
+  }
+
+  const uniquePaths = [...new Set(paths)];
+
+  const { error: rmErr } = await supabase.storage
+    .from(WHITE_COMPENSATORS_BUCKET)
+    .remove(uniquePaths);
+
+  if (rmErr) {
+    throw new Error(formatSupabaseError(rmErr));
+  }
+}
+
 export { WHITE_COMPENSATORS_BUCKET };
