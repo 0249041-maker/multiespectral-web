@@ -96,6 +96,7 @@ export const CALIBRATION_LED = {
   /** Al terminar calibración óptica (enfoque/diafragma) con éxito. */
   FOCUS_APERTURE_DONE: { pattern: "blink", color: "green" },
   WHITE: { pattern: "blink", color: "white" },
+  WHITE_DONE: { pattern: "blink", color: "green" },
 };
 
 /** Filtros del cubo óptico (IDs alineados con el protocolo WebSocket de la cámara). */
@@ -106,3 +107,6 @@ export const WAVELENGTH_FILTERS = [
   { id: 4, nm: 725, label: "725 nm" },
   { id: 5, nm: 850, label: "850 nm" },
 ];
+
+/** Bandas del cubo blanco (725 nm oficial, no 720). */
+export const WHITE_CALIBRATION_BANDS_NM = [450, 550, 656, 725, 850];

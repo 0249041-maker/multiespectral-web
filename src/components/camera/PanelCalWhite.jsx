@@ -1,11 +1,15 @@
-import FocusLiveTest from "@/components/FocusLiveTest.jsx";
+import OpticalLiveView from "@/components/camera/OpticalLiveView.jsx";
 import SupabaseImage from "@/components/advanced/SupabaseImage.jsx";
+import { useWhiteCalibration } from "@/hooks/useWhiteCalibration";
 import {
   CALIBRATION_LED,
   CAMERA_LIVE_WS_URL,
+  WHITE_CALIBRATION_BANDS_NM,
   WHITE_COMPENSATORS_BUCKET,
+  WAVELENGTH_FILTERS,
 } from "@/lib/cameraDashboardConstants";
 import { getSupabaseEnvDebug } from "@/lib/supabase";
+import { computeCompensatorsFromSession } from "@/lib/whiteCompensatorCompute";
 import { listWhiteCompensatorSessions } from "@/lib/whiteCompensatorsStorage";
 import { useCallback, useEffect, useState } from "react";
 
@@ -27,127 +31,160 @@ function Card({ title, subtitle, children, className = "" }) {
   );
 }
 
-function BackButton({ onClick }) {
+function CompensatorTable({ compensators }) {
+  if (!compensators) return null;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="mb-4 text-sm font-medium text-slate-600 hover:text-emerald-700"
-    >
-      ← Volver
-    </button>
+    <dl className="mt-3 grid grid-cols-2 gap-2 font-mono text-xs sm:grid-cols-5">
+      {WHITE_CALIBRATION_BANDS_NM.map((nm) => (
+        <div
+          key={nm}
+          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-center"
+        >
+          <dt className="text-[10px] text-slate-500">{nm} nm</dt>
+          <dd className="text-base font-semibold text-emerald-700">
+            {compensators[String(nm)] ?? "—"}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
-function PanelCalWhiteCreate({ dash, onBack }) {
-  const [phase, setPhase] = useState("idle");
-  const [liveStarted, setLiveStarted] = useState(false);
-
-  const run = () => {
-    setPhase("capturing");
-    dash.appendLog("[CAPTURE] Blancos · capturando placas…");
-    window.setTimeout(() => {
-      setPhase("processing");
-      dash.appendLog("[PROC] Compensación espectral…");
-    }, 900);
-    window.setTimeout(() => {
-      setPhase("uploading");
-      dash.appendLog("[UPLOAD] Subiendo coeficientes (mock)…");
-    }, 1800);
-    window.setTimeout(() => {
-      setPhase("idle");
-      dash.appendLog("[OK] Compensadores aplicados (mock).");
-    }, 2600);
-  };
+function PanelCalWhiteNew({ dash }) {
+  const white = useWhiteCalibration({
+    wsUrl: CAMERA_LIVE_WS_URL,
+    appendLog: dash.appendLog,
+    opticalExposureMs: dash.opticalExposureMs,
+    onSessionStart: () =>
+      dash.startCalibrationLed(CALIBRATION_LED.WHITE.pattern, CALIBRATION_LED.WHITE.color),
+    onWhiteReferenceReady: (ref) => {
+      dash.setActiveWhiteReference({
+        cube_id: ref.cube_id,
+        storage_path: ref.storage_path,
+        exposure_ms: ref.exposure_ms ?? dash.opticalExposureMs ?? undefined,
+        bucket: ref.bucket,
+        compensators: ref.compensators,
+      });
+      dash.finishCalibrationLed(CALIBRATION_LED.WHITE_DONE.pattern, CALIBRATION_LED.WHITE_DONE.color);
+      dash.appendLog(
+        `[OK] Compensadores calculados · ${ref.cube_id} · bandas ${Object.keys(ref.compensators).join(", ")}`
+      );
+    },
+  });
 
   return (
-    <Card
-      title="Crear compensador"
-      subtitle="Inicia la calibración para ver la cámara en vivo, luego captura los compensadores."
-    >
-      <BackButton onClick={onBack} />
+    <div className="space-y-4">
+      {dash.opticalExposureMs == null ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Completa primero la <strong>calibración óptica</strong> (enfoque/diafragma) para fijar la
+          exposición del cubo blanco.
+        </p>
+      ) : (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-600">
+          Exposición óptica: <span className="text-emerald-700">{dash.opticalExposureMs} ms</span>{" "}
+          (la cámara usará esta exposición al capturar blancos).
+        </p>
+      )}
+
+      <p className="font-mono text-xs text-slate-500">
+        WebSocket:{" "}
+        <code className="rounded bg-slate-100 px-1">{white.wsUrl}</code>
+        <span className={white.connected ? " ml-2 text-emerald-600" : " ml-2 text-amber-600"}>
+          {white.connected ? "conectado" : "desconectado"}
+        </span>
+      </p>
+
+      {white.connectionError ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {white.connectionError}
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3">
-        {!liveStarted ? (
+        {!white.sessionActive ? (
           <button
             type="button"
-            onClick={() => {
-              setLiveStarted(true);
-              dash.startCalibrationLed(
-                CALIBRATION_LED.WHITE.pattern,
-                CALIBRATION_LED.WHITE.color
-              );
-              dash.appendLog("[CAL] Compensadores blancos · iniciando vista en vivo…");
-            }}
-            className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700"
+            disabled={white.controlsDisabled || !white.hasOpticalExposure}
+            onClick={white.startWhiteCalibration}
+            className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
           >
             Iniciar calibración
           </button>
         ) : null}
         <button
           type="button"
-          onClick={run}
-          disabled={!liveStarted || phase !== "idle"}
+          disabled={
+            !white.sessionActive || white.controlsDisabled || white.processing
+          }
+          onClick={white.captureWhiteReference}
           className="rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg disabled:opacity-40"
         >
-          Capturar compensadores
+          {white.processing ? "Procesando BMP…" : "Capturar blancos"}
         </button>
       </div>
 
-      {liveStarted ? (
-        <div className="mt-4">
-          <FocusLiveTest
-            embedded
-            fixedWsUrl={CAMERA_LIVE_WS_URL}
-            autoStart
-            hideStartButton
-            hideHeader
-            showHelp={false}
-            title=""
-            subtitle=""
-            startButtonLabel="Iniciar calibración"
-            stopButtonLabel="Detener calibración"
-            onCalibrationStart={() =>
-              dash.startCalibrationLed(
-                CALIBRATION_LED.WHITE.pattern,
-                CALIBRATION_LED.WHITE.color
-              )
-            }
+      {white.sessionActive ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase text-slate-500">Preview filtro</span>
+            {WAVELENGTH_FILTERS.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                disabled={white.controlsDisabled}
+                onClick={() => white.moveFilter(w.id)}
+                className={`rounded-full border px-2.5 py-1 font-mono text-[11px] ${
+                  white.selectedFilterId === w.id
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                    : "border-slate-300 text-slate-600"
+                }`}
+              >
+                {w.nm}
+              </button>
+            ))}
+          </div>
+          <OpticalLiveView
+            frameUrl={white.frameUrl}
+            livePaused={white.livePaused}
+            switchingFilter={white.switchingFilter}
+            waiting={!white.frameUrl}
+            placeholder="Acomoda la cartulina blanca…"
           />
-        </div>
+        </>
       ) : (
-        <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          Pulsa «Iniciar calibración» para conectar la vista en vivo de la cámara.
+        <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          Inicia la calibración para ver la cámara en vivo y colocar la cartulina blanca.
         </p>
       )}
 
-      <dl className="mt-4 grid gap-2 font-mono text-sm sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <dt className="text-[10px] uppercase text-slate-500">Captura</dt>
-          <dd className="text-emerald-700">{phase === "capturing" ? "activa" : "idle"}</dd>
+      {white.statusText ? (
+        <p className="text-sm font-medium text-slate-700">{white.statusText}</p>
+      ) : null}
+
+      {dash.activeWhiteReference ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4">
+          <p className="text-sm font-semibold text-emerald-900">Referencia blanca activa</p>
+          <p className="mt-1 font-mono text-xs text-emerald-800">
+            {dash.activeWhiteReference.cube_id}
+          </p>
+          <CompensatorTable compensators={dash.activeWhiteReference.compensators} />
         </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <dt className="text-[10px] uppercase text-slate-500">Procesamiento</dt>
-          <dd className="text-amber-700">{phase === "processing" ? "en curso" : "—"}</dd>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <dt className="text-[10px] uppercase text-slate-500">Subida</dt>
-          <dd className="text-violet-700">{phase === "uploading" ? "subiendo" : "—"}</dd>
-        </div>
-      </dl>
-    </Card>
+      ) : null}
+    </div>
   );
 }
 
-function PanelCalWhiteReuse({ dash, onBack }) {
+function PanelCalWhitePast({ dash }) {
   const supabaseDebug = getSupabaseEnvDebug();
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [sessions, setSessions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
 
   const load = useCallback(async () => {
     if (!supabaseDebug.configured) {
-      setError("Supabase no está configurado en este entorno.");
+      setError("Supabase no está configurado.");
       setLoading(false);
       return;
     }
@@ -156,11 +193,9 @@ function PanelCalWhiteReuse({ dash, onBack }) {
     try {
       const list = await listWhiteCompensatorSessions();
       setSessions(list);
-      dash.appendLog(`[CAL] ${list.length} compensador(es) en Storage · ${WHITE_COMPENSATORS_BUCKET}`);
+      dash.appendLog(`[CAL] ${list.length} cubo(s) blanco en ${WHITE_COMPENSATORS_BUCKET}`);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Error al listar compensadores";
-      setError(msg);
-      dash.appendLog(`[ERR] Blancos Storage · ${msg}`);
+      setError(e instanceof Error ? e.message : "Error al listar");
     } finally {
       setLoading(false);
     }
@@ -171,112 +206,84 @@ function PanelCalWhiteReuse({ dash, onBack }) {
   }, [load]);
 
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
-  const activeId = dash.activeWhiteCompensator?.id;
 
-  const applySession = (session) => {
-    dash.setActiveWhiteCompensator({
-      id: session.id,
-      folder: session.folder,
-      files: session.files,
-    });
-    dash.appendLog(`[CAL] Compensador activo · ${session.folder} (${session.files.length} archivos)`);
+  const applySession = async (session) => {
+    setProcessing(true);
+    setError("");
+    try {
+      const ref = await computeCompensatorsFromSession(session);
+      dash.setActiveWhiteReference({
+        cube_id: ref.cube_id,
+        storage_path: ref.storage_path,
+        exposure_ms: dash.opticalExposureMs ?? undefined,
+        compensators: ref.compensators,
+      });
+      dash.finishCalibrationLed(CALIBRATION_LED.WHITE_DONE.pattern, CALIBRATION_LED.WHITE_DONE.color);
+      dash.appendLog(`[OK] Compensador histórico · ${session.id}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al procesar";
+      setError(msg);
+      dash.appendLog(`[ERR] ${msg}`);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
-    <Card
-      title="Utilizar compensadores antiguos"
-      subtitle={`Carpetas en Storage · bucket ${WHITE_COMPENSATORS_BUCKET}`}
-    >
-      <BackButton onClick={onBack} />
-
-      {dash.activeWhiteCompensator ? (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          Compensador en uso:{" "}
-          <span className="font-mono font-semibold">{dash.activeWhiteCompensator.folder}</span>
-          <button
-            type="button"
-            onClick={() => {
-              dash.setActiveWhiteCompensator(null);
-              dash.appendLog("[CAL] Compensador activo desactivado.");
-            }}
-            className="ml-2 text-xs underline hover:no-underline"
-          >
-            Quitar
-          </button>
-        </p>
-      ) : null}
-
+    <div className="space-y-4">
       {!supabaseDebug.configured ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Configura <code className="rounded bg-amber-100 px-1">VITE_SUPABASE_URL</code> y{" "}
-          <code className="rounded bg-amber-100 px-1">VITE_SUPABASE_ANON_KEY</code> para listar
-          compensadores.
+          Configura Supabase para listar cubos en{" "}
+          <code className="rounded bg-amber-100 px-1">{WHITE_COMPENSATORS_BUCKET}</code>.
         </p>
       ) : null}
 
       {loading ? (
-        <p className="py-8 text-center text-sm text-slate-500">Cargando compensadores…</p>
+        <p className="py-6 text-center text-sm text-slate-500">Cargando calibraciones…</p>
       ) : null}
-
       {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
-          <button
-            type="button"
-            onClick={load}
-            className="ml-2 underline hover:no-underline"
-          >
+          <button type="button" onClick={load} className="ml-2 underline">
             Reintentar
           </button>
-        </div>
+        </p>
       ) : null}
 
       {!loading && !error && sessions.length === 0 ? (
         <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          No hay carpetas de compensadores en{" "}
-          <code className="font-mono text-xs">{WHITE_COMPENSATORS_BUCKET}</code>. La Raspberry puede
-          subir cada sesión como una carpeta con imágenes por banda.
+          No hay cubos en{" "}
+          <span className="font-mono">camera_xxx/white_YYYYMMDD_HHMMSS/</span>
         </p>
       ) : null}
 
-      {!loading && sessions.length > 0 ? (
+      {sessions.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {sessions.map((session) => {
-            const preview = session.files[0];
-            const isSelected = selectedId === session.id;
-            const isActive = activeId === session.id;
+            const preview = session.bandFiles.find((b) => b.nm === 550) ?? session.bandFiles[0];
             return (
               <button
                 key={session.id}
                 type="button"
                 onClick={() => setSelectedId(session.id)}
-                className={`overflow-hidden rounded-xl border text-left transition ${
-                  isSelected
+                className={`overflow-hidden rounded-xl border text-left ${
+                  selectedId === session.id
                     ? "border-emerald-500 ring-2 ring-emerald-200"
-                    : "border-slate-200 hover:border-emerald-300"
-                } ${isActive ? "bg-emerald-50/50" : "bg-white"}`}
+                    : "border-slate-200"
+                }`}
               >
-                <div className="aspect-video bg-slate-900">
-                  {preview?.publicUrl ? (
+                <div className="aspect-video bg-black">
+                  {preview?.url ? (
                     <SupabaseImage
-                      src={preview.publicUrl}
-                      alt={`Vista previa ${session.folder}`}
+                      src={preview.url}
+                      alt={session.cubeId}
                       className="h-full w-full object-contain"
                     />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-slate-500">
-                      Sin vista previa
-                    </div>
-                  )}
+                  ) : null}
                 </div>
-                <div className="p-3">
-                  <p className="truncate font-mono text-sm font-semibold text-slate-900">
-                    {session.folder}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {session.files.length} archivo(s)
-                    {isActive ? " · en uso" : ""}
-                  </p>
+                <div className="p-2">
+                  <p className="truncate font-mono text-xs font-semibold">{session.cubeId}</p>
+                  <p className="text-[10px] text-slate-500">{session.cameraId}</p>
                 </div>
               </button>
             );
@@ -285,77 +292,71 @@ function PanelCalWhiteReuse({ dash, onBack }) {
       ) : null}
 
       {selected ? (
-        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <p className="font-mono text-sm font-semibold text-slate-900">{selected.folder}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {selected.files.map((f) => (
-              <div key={f.path} className="overflow-hidden rounded-lg border border-slate-200 bg-black">
-                <SupabaseImage
-                  src={f.publicUrl}
-                  alt={f.name}
-                  className="aspect-square w-full object-contain"
-                />
-                <p className="truncate bg-white px-2 py-1 font-mono text-[10px] text-slate-600">
-                  {f.name}
-                </p>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="font-mono text-sm font-semibold">{selected.id}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {selected.bandFiles.map((b) => (
+              <div key={b.path} className="rounded border border-slate-200 bg-black">
+                <SupabaseImage src={b.url} alt={b.name} className="aspect-square w-full object-contain" />
+                <p className="bg-white px-1 py-0.5 text-center font-mono text-[10px]">{b.nm}</p>
               </div>
             ))}
           </div>
           <button
             type="button"
+            disabled={processing}
             onClick={() => applySession(selected)}
-            className="mt-4 rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700"
+            className="mt-4 rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50"
           >
-            Usar este compensador
+            {processing ? "Calculando compensadores…" : "Usar esta calibración"}
           </button>
         </div>
       ) : null}
-    </Card>
+
+      {dash.activeWhiteReference ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-emerald-900">Activa en el instrumento</p>
+          <CompensatorTable compensators={dash.activeWhiteReference.compensators} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-/** @param {{ dash: import("@/state/useCameraDashboardMocks").ReturnType }} props */
 export default function PanelCalWhite({ dash }) {
-  const [mode, setMode] = useState(null);
-
-  if (mode === "create") {
-    return <PanelCalWhiteCreate dash={dash} onBack={() => setMode(null)} />;
-  }
-
-  if (mode === "reuse") {
-    return <PanelCalWhiteReuse dash={dash} onBack={() => setMode(null)} />;
-  }
+  const [tab, setTab] = useState("new");
 
   return (
     <Card
       title="Calibración de compensadores blancos"
-      subtitle="Elige si vas a capturar un compensador nuevo o reutilizar uno guardado en la nube."
+      subtitle="Captura nueva referencia por WebSocket o reutiliza un cubo en Supabase Storage."
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="mb-6 flex gap-2 border-b border-slate-200">
         <button
           type="button"
-          onClick={() => setMode("create")}
-          className="flex flex-col items-start gap-2 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-6 text-left shadow-sm transition hover:border-emerald-400 hover:shadow-md"
+          onClick={() => setTab("new")}
+          className={`border-b-2 px-4 py-2 text-sm font-semibold transition ${
+            tab === "new"
+              ? "border-emerald-600 text-emerald-800"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
         >
-          <span className="text-lg font-semibold text-emerald-900">Crear compensador</span>
-          <span className="text-sm text-slate-600">
-            Vista en vivo, captura de placas blancas y subida de un compensador nuevo.
-          </span>
+          Nueva calibración
         </button>
         <button
           type="button"
-          onClick={() => setMode("reuse")}
-          className="flex flex-col items-start gap-2 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-6 text-left shadow-sm transition hover:border-violet-400 hover:shadow-md"
+          onClick={() => setTab("past")}
+          className={`border-b-2 px-4 py-2 text-sm font-semibold transition ${
+            tab === "past"
+              ? "border-violet-600 text-violet-800"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
         >
-          <span className="text-lg font-semibold text-violet-900">
-            Utilizar compensadores antiguos
-          </span>
-          <span className="text-sm text-slate-600">
-            Selecciona una carpeta desde Supabase Storage (
-            <code className="text-xs">{WHITE_COMPENSATORS_BUCKET}</code>).
-          </span>
+          Usar calibración pasada
         </button>
       </div>
+
+      {tab === "new" ? <PanelCalWhiteNew dash={dash} /> : <PanelCalWhitePast dash={dash} />}
     </Card>
   );
 }

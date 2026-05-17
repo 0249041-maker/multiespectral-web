@@ -70,6 +70,30 @@ export function buildFinishOpticalCalibrationCommand(commandId) {
   return buildCameraCommand("finish_optical_calibration", commandId, {});
 }
 
+export function buildStartWhiteCalibrationCommand(commandId) {
+  return buildCameraCommand("start_white_calibration", commandId, {});
+}
+
+export function buildCaptureWhiteReferenceCommand(commandId, name = "white_reference") {
+  return buildCameraCommand("capture_white_reference", commandId, { name });
+}
+
+/**
+ * @param {string} name
+ * @param {number} exposureMs
+ * @param {{ cube_id: string, compensators: Record<string, number> }} whiteReference
+ */
+export function buildCaptureCubePayload(name, exposureMs, whiteReference) {
+  return {
+    name,
+    exposure_ms: exposureMs,
+    white_reference: {
+      cube_id: whiteReference.cube_id,
+      compensators: whiteReference.compensators,
+    },
+  };
+}
+
 export function findFilterById(filterId) {
   return WAVELENGTH_FILTERS.find((f) => f.id === filterId) ?? null;
 }

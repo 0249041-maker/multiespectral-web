@@ -11,6 +11,16 @@ function ts() {
   return d.toLocaleTimeString("es", { hour12: false });
 }
 
+/**
+ * @typedef {{
+ *   cube_id: string,
+ *   storage_path?: string,
+ *   exposure_ms?: number,
+ *   bucket?: string,
+ *   compensators: Record<string, number>,
+ * }} ActiveWhiteReference
+ */
+
 export function useCameraDashboardMocks() {
   const [section, setSection] = useState(CAMERA_SECTION_IDS.STATUS);
   const [logs, setLogs] = useState(INITIAL_LOGS);
@@ -24,8 +34,14 @@ export function useCameraDashboardMocks() {
   const [ledPattern, setLedPattern] = useState("spinner");
   const [ledColor, setLedColor] = useState("emerald");
   const [shutdownOpen, setShutdownOpen] = useState(false);
-  /** Compensador blanco seleccionado desde Storage (`white_compensators/<carpeta>/`). */
-  const [activeWhiteCompensator, setActiveWhiteCompensator] = useState(null);
+
+  /** Exposición definida en calibración óptica (ms). */
+  const [opticalExposureMs, setOpticalExposureMs] = useState(null);
+
+  /** Referencia blanca activa con valores numéricos por banda. */
+  const [activeWhiteReference, setActiveWhiteReference] = useState(
+    /** @type {ActiveWhiteReference | null} */ (null)
+  );
 
   const logEndRef = useRef(null);
 
@@ -33,14 +49,12 @@ export function useCameraDashboardMocks() {
     setLogs((prev) => [...prev.slice(-400), `[${ts()}] ${line}`]);
   }, []);
 
-  /** LED del header: patrón + color durante calibración. */
   const startCalibrationLed = useCallback((pattern, colorKey = "white") => {
     setLedPattern(pattern);
     setLedColor(colorKey);
     setGlobalStatusKey("calibrating");
   }, []);
 
-  /** LED al finalizar calibración con éxito (p. ej. blink verde). */
   const finishCalibrationLed = useCallback((pattern, colorKey = "green") => {
     setLedPattern(pattern);
     setLedColor(colorKey);
@@ -83,8 +97,10 @@ export function useCameraDashboardMocks() {
     finishCalibrationLed,
     shutdownOpen,
     setShutdownOpen,
-    activeWhiteCompensator,
-    setActiveWhiteCompensator,
+    opticalExposureMs,
+    setOpticalExposureMs,
+    activeWhiteReference,
+    setActiveWhiteReference,
     nav,
   };
 }

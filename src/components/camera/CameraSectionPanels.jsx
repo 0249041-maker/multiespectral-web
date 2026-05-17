@@ -12,6 +12,7 @@ import {
   WAVELENGTH_FILTERS,
 } from "@/lib/cameraDashboardConstants";
 import { useFilterCalibration } from "@/hooks/useFilterCalibration";
+import { useCaptureCube } from "@/hooks/useCaptureCube";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 function Card({ title, subtitle, children, className = "" }) {
@@ -273,6 +274,7 @@ function PanelCalFocusAperture({ dash }) {
         CALIBRATION_LED.FOCUS_APERTURE_DONE.pattern,
         CALIBRATION_LED.FOCUS_APERTURE_DONE.color
       ),
+    onExposureChange: (ms) => dash.setOpticalExposureMs(ms),
   });
 
   const bars = useMemo(
@@ -473,24 +475,33 @@ function PanelCalFocusAperture({ dash }) {
 }
 
 function PanelCaptureSingle({ dash }) {
-  const [phase, setPhase] = useState("idle");
   const [name, setName] = useState("cubo_estufa_A12");
-  const [filt, setFilt] = useState("650 nm");
-  const [exp, setExp] = useState("14");
+  const [filt, setFilt] = useState("656 nm");
+  const defaultExp =
+    dash.opticalExposureMs != null ? String(dash.opticalExposureMs) : "14";
+  const [exp, setExp] = useState(defaultExp);
 
-  const capture = useCallback(() => {
-    setPhase("capturing");
-    dash.appendLog("[CAPTURE] Capturando cubo multiespectral…");
-    window.setTimeout(() => {
-      setPhase("uploading");
-      dash.appendLog("[UPLOAD] Cubo → almacenamiento…");
-    }, 1100);
-    window.setTimeout(() => {
-      setPhase("success");
-      dash.appendLog("[OK] Cubo registrado (mock).");
-    }, 2200);
-    window.setTimeout(() => setPhase("idle"), 4200);
-  }, [dash]);
+  const capture = useCaptureCube({
+    wsUrl: CAMERA_LIVE_WS_URL,
+    appendLog: dash.appendLog,
+    activeWhiteReference: dash.activeWhiteReference,
+    opticalExposureMs: dash.opticalExposureMs,
+  });
+
+  const phase = capture.commandPending
+    ? "capturing"
+    : capture.lastCaptureOk
+      ? "success"
+      : "idle";
+
+  const runCapture = useCallback(() => {
+    const exposure = Number.parseFloat(exp) || dash.opticalExposureMs || 14;
+    if (!capture.canCapture) {
+      dash.appendLog("[ERR] Define calibración de blancos antes de capturar el cubo.");
+      return;
+    }
+    capture.captureCube(name, exposure);
+  }, [capture, name, exp, dash]);
 
   return (
     <div className="space-y-4 pb-24">
@@ -542,8 +553,10 @@ function PanelCaptureSingle({ dash }) {
               <dd className="text-emerald-700">mxc-7f3a·mock</dd>
             </div>
             <div className="flex justify-between">
-              <dt>Band pack</dt>
-              <dd>5 bandas · RAW + JPEG</dd>
+              <dt>Referencia blanca</dt>
+              <dd className={dash.activeWhiteReference ? "text-emerald-700" : "text-amber-700"}>
+                {dash.activeWhiteReference?.cube_id ?? "sin definir"}
+              </dd>
             </div>
             <div className="flex justify-between">
               <dt>Estado</dt>
@@ -560,11 +573,11 @@ function PanelCaptureSingle({ dash }) {
           </div>
           <button
             type="button"
-            onClick={capture}
-            disabled={phase === "capturing" || phase === "uploading"}
+            onClick={runCapture}
+            disabled={capture.commandPending || !capture.canCapture}
             className="rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 px-10 py-4 text-lg font-bold tracking-wide text-white shadow-[0_0_24px_rgba(16,185,129,0.35)] transition hover:brightness-110 disabled:opacity-40"
           >
-            {phase === "capturing" || phase === "uploading" ? (
+            {capture.commandPending ? (
               <span className="inline-flex items-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 Procesando…

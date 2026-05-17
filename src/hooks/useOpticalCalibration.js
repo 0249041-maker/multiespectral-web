@@ -7,13 +7,14 @@ const DEFAULT_EXPOSURE_MS = 30;
 
 /**
  * Calibración óptica (enfoque/diafragma): start / set_exposure / move_filter / finish.
- * @param {{ wsUrl?: string, appendLog?: (line: string) => void, onSessionStart?: () => void, onSessionEnd?: () => void }} options
+ * @param {{ wsUrl?: string, appendLog?: (line: string) => void, onSessionStart?: () => void, onSessionEnd?: () => void, onExposureChange?: (ms: number) => void }} options
  */
 export function useOpticalCalibration({
   wsUrl,
   appendLog,
   onSessionStart,
   onSessionEnd,
+  onExposureChange,
 } = {}) {
   const [exposureMs, setExposureMs] = useState(String(DEFAULT_EXPOSURE_MS));
   const [sessionActive, setSessionActive] = useState(false);
@@ -23,12 +24,19 @@ export function useOpticalCalibration({
 
   const onSessionStartRef = useRef(onSessionStart);
   const onSessionEndRef = useRef(onSessionEnd);
+  const onExposureChangeRef = useRef(onExposureChange);
   const wsApiRef = useRef(null);
+
+  const parseExposure = useCallback(() => {
+    const n = Number.parseFloat(exposureMs);
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_EXPOSURE_MS;
+  }, [exposureMs]);
 
   useEffect(() => {
     onSessionStartRef.current = onSessionStart;
     onSessionEndRef.current = onSessionEnd;
-  }, [onSessionStart, onSessionEnd]);
+    onExposureChangeRef.current = onExposureChange;
+  }, [onSessionStart, onSessionEnd, onExposureChange]);
 
   const ws = useCameraWebSocket({
     wsUrl,
@@ -37,11 +45,16 @@ export function useOpticalCalibration({
       if (command === "start_optical_calibration" && success) {
         setSessionActive(true);
         wsApiRef.current?.setLiveViewSuppressed(false);
+        onExposureChangeRef.current?.(parseExposure());
         onSessionStartRef.current?.();
+      }
+      if (command === "set_exposure" && success) {
+        onExposureChangeRef.current?.(parseExposure());
       }
       if (command === "finish_optical_calibration" && success) {
         setSessionActive(false);
         wsApiRef.current?.setLiveViewSuppressed(true);
+        onExposureChangeRef.current?.(parseExposure());
         onSessionEndRef.current?.();
       }
     },
@@ -50,11 +63,6 @@ export function useOpticalCalibration({
   wsApiRef.current = ws;
 
   const controlsDisabled = ws.commandPending;
-
-  const parseExposure = useCallback(() => {
-    const n = Number.parseFloat(exposureMs);
-    return Number.isFinite(n) && n > 0 ? n : DEFAULT_EXPOSURE_MS;
-  }, [exposureMs]);
 
   const startOpticalCalibration = useCallback(() => {
     ws.sendCommand("start_optical_calibration", {

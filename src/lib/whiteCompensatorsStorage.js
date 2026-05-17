@@ -1,12 +1,23 @@
-import { WHITE_COMPENSATORS_BUCKET } from "@/lib/cameraDashboardConstants";
+import {
+  WHITE_CALIBRATION_BANDS_NM,
+  WHITE_COMPENSATORS_BUCKET,
+} from "@/lib/cameraDashboardConstants";
 import { supabase } from "@/lib/supabase";
 import { formatSupabaseError } from "@/lib/spectralStorage";
 
-const IMAGE_EXT = /\.(png|jpe?g|webp|bmp)$/i;
+const BMP_EXT = /\.bmp$/i;
 
 /**
- * @typedef {{ name: string, path: string, publicUrl: string, updatedAt?: string }} WhiteCompensatorFile
- * @typedef {{ id: string, folder: string, files: WhiteCompensatorFile[], createdAt?: string }} WhiteCompensatorSession
+ * @typedef {{ nm: number, name: string, path: string, url: string }} WhiteBandFile
+ * @typedef {{
+ *   id: string,
+ *   cameraId: string,
+ *   cubeId: string,
+ *   storagePath: string,
+ *   bandFiles: WhiteBandFile[],
+ *   metadataUrl?: string,
+ *   createdAt?: string,
+ * }} WhiteCompensatorSession
  */
 
 function isFolderEntry(entry) {
@@ -19,8 +30,15 @@ function publicUrlForPath(path) {
   return data?.publicUrl ?? "";
 }
 
+function parseBandNm(fileName) {
+  const m = fileName.match(/^(\d{3})\.bmp$/i);
+  if (!m) return null;
+  const nm = Number.parseInt(m[1], 10);
+  return WHITE_CALIBRATION_BANDS_NM.includes(nm) ? nm : null;
+}
+
 /**
- * Lista carpetas de compensadores en la raíz del bucket (cada carpeta = un compensador).
+ * Lista cubos blancos: white_compensators/{camera_id}/{white_YYYYMMDD_HHMMSS}/
  * @returns {Promise<WhiteCompensatorSession[]>}
  */
 export async function listWhiteCompensatorSessions() {
@@ -28,56 +46,84 @@ export async function listWhiteCompensatorSessions() {
     throw new Error("Supabase no está configurado");
   }
 
-  const { data: rootItems, error: listErr } = await supabase.storage
+  const { data: cameras, error: camErr } = await supabase.storage
     .from(WHITE_COMPENSATORS_BUCKET)
     .list("", {
-      limit: 200,
-      sortBy: { column: "created_at", order: "desc" },
+      limit: 100,
+      sortBy: { column: "name", order: "asc" },
     });
 
-  if (listErr) {
-    throw new Error(formatSupabaseError(listErr));
+  if (camErr) {
+    throw new Error(formatSupabaseError(camErr));
   }
 
-  const folders = (rootItems ?? []).filter(isFolderEntry);
   const sessions = [];
 
-  for (const folder of folders) {
-    const folderName = folder.name;
-    if (!folderName || folderName.startsWith(".")) continue;
+  for (const cam of cameras ?? []) {
+    if (!isFolderEntry(cam) || !cam.name || cam.name.startsWith(".")) continue;
+    const cameraId = cam.name;
 
-    const { data: files, error: filesErr } = await supabase.storage
+    const { data: cubes, error: cubeErr } = await supabase.storage
       .from(WHITE_COMPENSATORS_BUCKET)
-      .list(folderName, {
-        limit: 50,
-        sortBy: { column: "name", order: "asc" },
+      .list(cameraId, {
+        limit: 200,
+        sortBy: { column: "created_at", order: "desc" },
       });
 
-    if (filesErr) {
-      console.warn(`[white_compensators] list ${folderName}:`, filesErr.message);
+    if (cubeErr) {
+      console.warn(`[white_compensators] list ${cameraId}:`, cubeErr.message);
       continue;
     }
 
-    const imageFiles = (files ?? [])
-      .filter((f) => f.name && !isFolderEntry(f) && IMAGE_EXT.test(f.name))
-      .map((f) => {
-        const path = `${folderName}/${f.name}`;
-        return {
+    for (const cube of cubes ?? []) {
+      if (!isFolderEntry(cube) || !cube.name?.startsWith("white_")) continue;
+      const cubeId = cube.name;
+      const storagePath = `${cameraId}/${cubeId}/`;
+
+      const { data: files, error: filesErr } = await supabase.storage
+        .from(WHITE_COMPENSATORS_BUCKET)
+        .list(`${cameraId}/${cubeId}`, {
+          limit: 20,
+          sortBy: { column: "name", order: "asc" },
+        });
+
+      if (filesErr) continue;
+
+      /** @type {WhiteBandFile[]} */
+      const bandFiles = [];
+      let metadataUrl;
+
+      for (const f of files ?? []) {
+        if (!f.name || isFolderEntry(f)) continue;
+        const path = `${cameraId}/${cubeId}/${f.name}`;
+        if (f.name === "metadata.json") {
+          metadataUrl = publicUrlForPath(path);
+          continue;
+        }
+        const nm = parseBandNm(f.name);
+        if (nm == null) continue;
+        bandFiles.push({
+          nm,
           name: f.name,
           path,
-          publicUrl: publicUrlForPath(path),
-          updatedAt: f.updated_at ?? f.created_at,
-        };
+          url: publicUrlForPath(path),
+        });
+      }
+
+      if (bandFiles.length === 0) continue;
+
+      bandFiles.sort((a, b) => a.nm - b.nm);
+
+      sessions.push({
+        id: `${cameraId}/${cubeId}`,
+        cameraId,
+        cubeId,
+        storagePath,
+        bandFiles,
+        metadataUrl,
+        createdAt: cube.created_at ?? cube.updated_at,
       });
-
-    if (imageFiles.length === 0) continue;
-
-    sessions.push({
-      id: folderName,
-      folder: folderName,
-      files: imageFiles,
-      createdAt: folder.created_at ?? folder.updated_at,
-    });
+    }
   }
 
   sessions.sort((a, b) => {
