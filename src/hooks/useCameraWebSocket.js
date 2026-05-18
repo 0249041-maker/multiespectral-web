@@ -9,9 +9,14 @@ import {
 
 /**
  * WebSocket de cámara: mensajes JSON (texto) + fotogramas JPEG (binario).
- * @param {{ wsUrl?: string, appendLog?: (line: string) => void, onCommandDone?: (info: { command: string, success: boolean, result?: unknown, error?: unknown }) => void }} options
+ * @param {{
+ *   wsUrl?: string,
+ *   appendLog?: (line: string) => void,
+ *   onCommandDone?: (info: { command: string, success: boolean, result?: unknown, error?: unknown }) => void,
+ *   onCommandEvent?: (info: CameraCommandEvent) => void,
+ * }} options
  */
-export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone } = {}) {
+export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone, onCommandEvent } = {}) {
   const resolvedUrl = resolveCameraWsUrl(fixedWsUrl);
 
   const socketRef = useRef(null);
@@ -22,7 +27,16 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
   const liveViewSuppressedRef = useRef(false);
   const appendLogRef = useRef(appendLog);
   const onCommandDoneRef = useRef(onCommandDone);
+  const onCommandEventRef = useRef(onCommandEvent);
   const lastObjectUrlRef = useRef(null);
+
+  const mergeCameraState = useCallback((state) => {
+    if (typeof state !== "string" || !state.trim()) return;
+    setCameraInfo((prev) => ({
+      ...prev,
+      state,
+    }));
+  }, []);
 
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState("");
@@ -43,6 +57,14 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
   useEffect(() => {
     onCommandDoneRef.current = onCommandDone;
   }, [onCommandDone]);
+
+  useEffect(() => {
+    onCommandEventRef.current = onCommandEvent;
+  }, [onCommandEvent]);
+
+  const emitCommandEvent = useCallback((info) => {
+    onCommandEventRef.current?.(info);
+  }, []);
 
   const log = useCallback((line) => {
     appendLogRef.current?.(line);
@@ -155,13 +177,29 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
       if (!active || msg.command_id !== active.id) return;
 
       if (type === "command_ack") {
+        mergeCameraState(msg.state);
         if (msg.accepted) {
           setStatusText(`Command accepted: ${active.command}`);
           log(`[WS] command_ack · ${active.command} · accepted`);
+          emitCommandEvent({
+            phase: "ack",
+            command: active.command,
+            commandId: active.id,
+            accepted: true,
+            state: msg.state,
+          });
         } else {
           const err = formatCommandError(msg.error);
           setStatusText(err);
           clearCommand();
+          emitCommandEvent({
+            phase: "ack",
+            command: active.command,
+            commandId: active.id,
+            accepted: false,
+            error: msg.error,
+            state: msg.state,
+          });
           onCommandDoneRef.current?.({
             command: active.command,
             success: false,
@@ -174,16 +212,33 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
 
       if (type === "command_progress") {
         const message = msg.progress?.message || "Processing…";
+        mergeCameraState(msg.state);
         setStatusText(message);
         log(`[WS] progress · ${active.command} · ${message}`);
+        emitCommandEvent({
+          phase: "progress",
+          command: active.command,
+          commandId: active.id,
+          message,
+          state: msg.state,
+        });
         return;
       }
 
       if (type === "command_done") {
         const command = active.command;
+        mergeCameraState(msg.state);
         clearCommand();
         if (msg.success) {
           setStatusText(`Completed: ${command}`);
+          emitCommandEvent({
+            phase: "done",
+            command,
+            commandId: active.id,
+            success: true,
+            result: msg.result,
+            state: msg.state,
+          });
           onCommandDoneRef.current?.({
             command,
             success: true,
@@ -199,6 +254,14 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
         } else {
           const err = formatCommandError(msg.error);
           setStatusText(err);
+          emitCommandEvent({
+            phase: "done",
+            command,
+            commandId: active.id,
+            success: false,
+            error: msg.error,
+            state: msg.state,
+          });
           onCommandDoneRef.current?.({
             command,
             success: false,
@@ -208,7 +271,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
         }
       }
     },
-    [clearCommand, log]
+    [clearCommand, emitCommandEvent, log, mergeCameraState]
   );
 
   const handleCameraMessageRef = useRef(handleCameraMessage);
@@ -358,3 +421,28 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
     liveViewBlanked,
   };
 }
+
+/**
+ * @typedef {{
+ *   phase: "ack",
+ *   command: string,
+ *   commandId: string,
+ *   accepted: boolean,
+ *   error?: unknown,
+ *   state?: string,
+ * } | {
+ *   phase: "progress",
+ *   command: string,
+ *   commandId: string,
+ *   message?: string,
+ *   state?: string,
+ * } | {
+ *   phase: "done",
+ *   command: string,
+ *   commandId: string,
+ *   success: boolean,
+ *   error?: unknown,
+ *   result?: unknown,
+ *   state?: string,
+ * }} CameraCommandEvent
+ */

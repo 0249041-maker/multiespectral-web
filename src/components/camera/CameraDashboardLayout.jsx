@@ -1,7 +1,4 @@
-import CameraInstrumentHeader from "@/components/camera/CameraInstrumentHeader.jsx";
-import CameraSectionPanels from "@/components/camera/CameraSectionPanels.jsx";
-import CameraSidebar from "@/components/camera/CameraSidebar.jsx";
-import ShutdownModal from "@/components/camera/ShutdownModal.jsx";
+import CameraDashboardBody from "@/components/camera/CameraDashboardBody.jsx";
 import { CameraWebSocketProvider } from "@/context/CameraWebSocketContext";
 import { CAMERA_LIVE_WS_URL } from "@/lib/cameraDashboardConstants";
 import { useCameraDashboard } from "@/context/CameraDashboardContext";
@@ -59,31 +56,7 @@ export default function CameraDashboardLayout({ embedded = false, onBack }) {
       ) : null}
 
       <CameraWebSocketProvider wsUrl={CAMERA_LIVE_WS_URL} appendLog={dash.appendLog}>
-        <CameraInstrumentHeader dash={dash} />
-
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <CameraSidebar
-          activeId={dash.section}
-          onSelect={dash.setSection}
-          workflowStatus={dash.workflowStatus}
-        />
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50">
-          <div className="mx-auto max-w-7xl px-4 py-5 md:px-6 lg:py-6">
-            <CameraSectionPanels section={dash.section} dash={dash} />
-          </div>
-        </div>
-        </div>
-
-        <ShutdownModal
-          open={dash.shutdownOpen}
-          onCancel={() => dash.setShutdownOpen(false)}
-          onConfirm={() => {
-            dash.appendLog("[WARN] Apagado confirmado (mock · sin comando SSH/WebSocket).");
-            dash.setShutdownOpen(false);
-            dash.setOnline(false);
-            dash.setGlobalStatusKey("error");
-          }}
-        />
+        <CameraDashboardBody dash={dash} />
       </CameraWebSocketProvider>
     </>
   );

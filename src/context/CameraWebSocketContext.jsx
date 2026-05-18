@@ -14,6 +14,7 @@ export function CameraWebSocketProvider({
   appendLog,
 }) {
   const listenersRef = useRef(new Set());
+  const eventListenersRef = useRef(new Set());
 
   const notifyCommandDone = useCallback((info) => {
     for (const fn of listenersRef.current) {
@@ -25,10 +26,21 @@ export function CameraWebSocketProvider({
     }
   }, []);
 
+  const notifyCommandEvent = useCallback((info) => {
+    for (const fn of eventListenersRef.current) {
+      try {
+        fn(info);
+      } catch (e) {
+        console.error("[CameraWebSocket] command event listener error:", e);
+      }
+    }
+  }, []);
+
   const ws = useCameraWebSocket({
     wsUrl,
     appendLog,
     onCommandDone: notifyCommandDone,
+    onCommandEvent: notifyCommandEvent,
   });
 
   const subscribeCommandDone = useCallback((fn) => {
@@ -36,12 +48,18 @@ export function CameraWebSocketProvider({
     return () => listenersRef.current.delete(fn);
   }, []);
 
+  const subscribeCommandEvent = useCallback((fn) => {
+    eventListenersRef.current.add(fn);
+    return () => eventListenersRef.current.delete(fn);
+  }, []);
+
   const value = useMemo(
     () => ({
       ...ws,
       subscribeCommandDone,
+      subscribeCommandEvent,
     }),
-    [ws, subscribeCommandDone]
+    [ws, subscribeCommandDone, subscribeCommandEvent]
   );
 
   return (
@@ -72,4 +90,19 @@ export function useCameraCommandListener(listener) {
     if (!listener) return undefined;
     return subscribeCommandDone((info) => listenerRef.current?.(info));
   }, [subscribeCommandDone, listener]);
+}
+
+/**
+ * Escucha ack, progress y done del comando activo.
+ * @param {(info: import("@/hooks/useCameraWebSocket").CameraCommandEvent) => void} listener
+ */
+export function useCameraCommandEventListener(listener) {
+  const { subscribeCommandEvent } = useCameraWs();
+  const listenerRef = useRef(listener);
+  listenerRef.current = listener;
+
+  useEffect(() => {
+    if (!listener) return undefined;
+    return subscribeCommandEvent((info) => listenerRef.current?.(info));
+  }, [subscribeCommandEvent, listener]);
 }

@@ -95,6 +95,27 @@ export const CAMERA_LIVE_WS_URL = "wss://camera.multispectralcam.com";
 /** Valor de `state` en mensajes hello/status cuando la cámara está en captura de cubo. */
 export const CAMERA_STATE_CUBE_CAPTURE = "cube_capture_mode";
 
+export const CAMERA_STATE_SHUTTING_DOWN = "shutting_down";
+
+/** Estados en los que no se permite `shutdown_camera`. */
+export const CAMERA_STATES_BLOCKING_SHUTDOWN = [
+  "calibrating_filters",
+  "switching_filter",
+  "capturing_white_reference",
+  "uploading_white_reference",
+  "capturing_cube",
+  "uploading_cube",
+  CAMERA_STATE_SHUTTING_DOWN,
+];
+
+/** Estados en los que sí se puede intentar apagar (lista explícita del protocolo). */
+export const CAMERA_STATES_ALLOWING_SHUTDOWN = [
+  "online",
+  "optical_calibration",
+  "white_calibration",
+  CAMERA_STATE_CUBE_CAPTURE,
+];
+
 /** Bucket Storage: una carpeta por compensador blanco (Raspberry / capturas). */
 export const WHITE_COMPENSATORS_BUCKET =
   import.meta.env.VITE_SUPABASE_WHITE_BUCKET || "white_compensators";

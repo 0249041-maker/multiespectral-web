@@ -36,7 +36,7 @@ function StatusGlowBadge({ statusKey }) {
 /**
  * Cabecera principal del panel cámara: nombre, estado global, LED virtual, métricas mock.
  */
-export default function CameraInstrumentHeader({ dash }) {
+export default function CameraInstrumentHeader({ dash, shutdown }) {
   const {
     globalStatusKey,
     setGlobalStatusKey,
@@ -47,9 +47,12 @@ export default function CameraInstrumentHeader({ dash }) {
     serverOk,
     ledPattern,
     ledColor,
-    setShutdownOpen,
     appendLog,
   } = dash;
+
+  const cameraStateLabel = shutdown?.cameraState
+    ? shutdown.cameraState
+    : null;
 
   return (
     <div className="border-b border-slate-200 bg-white px-4 py-4 shadow-sm md:px-6">
@@ -68,16 +71,33 @@ export default function CameraInstrumentHeader({ dash }) {
             <StatusGlowBadge statusKey={globalStatusKey} />
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] ${
-                online
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-slate-200 bg-slate-100 text-slate-500"
+                shutdown?.shuttingDown
+                  ? "border-amber-200 bg-amber-50 text-amber-900"
+                  : online
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-slate-200 bg-slate-100 text-slate-500"
               }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" : "bg-slate-400"}`}
+                className={`h-2 w-2 rounded-full ${
+                  shutdown?.shuttingDown
+                    ? "animate-pulse bg-amber-500"
+                    : online
+                      ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
+                      : "bg-slate-400"
+                }`}
               />
-              {online ? "Online" : "Offline"}
+              {shutdown?.shuttingDown
+                ? "Apagando…"
+                : online
+                  ? "Online"
+                  : "Offline"}
             </span>
+            {cameraStateLabel ? (
+              <span className="font-mono text-[11px] text-slate-500">
+                state: <span className="text-slate-700">{cameraStateLabel}</span>
+              </span>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -155,13 +175,16 @@ export default function CameraInstrumentHeader({ dash }) {
           <NeoPixelRing pattern={ledPattern} colorKey={ledColor} size={112} />
           <button
             type="button"
-            onClick={() => {
-              setShutdownOpen(true);
-              appendLog("[WARN] Solicitud de apagado remoto (modal abierto).");
-            }}
-            className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 font-mono text-sm font-semibold text-red-800 shadow-sm transition hover:bg-red-100"
+            disabled={!shutdown?.canShutdown}
+            title={
+              shutdown?.canShutdown
+                ? "Enviar shutdown_camera por WebSocket"
+                : "Apagado no disponible en el estado actual o sin conexión"
+            }
+            onClick={() => shutdown?.openModal?.()}
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 font-mono text-sm font-semibold text-red-800 shadow-sm transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Apagado remoto
+            Apagar cámara
           </button>
         </div>
       </div>

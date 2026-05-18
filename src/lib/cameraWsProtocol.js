@@ -1,6 +1,9 @@
 import {
   CAMERA_LIVE_WS_URL,
   CAMERA_STATE_CUBE_CAPTURE,
+  CAMERA_STATE_SHUTTING_DOWN,
+  CAMERA_STATES_ALLOWING_SHUTDOWN,
+  CAMERA_STATES_BLOCKING_SHUTDOWN,
   WAVELENGTH_FILTERS,
 } from "@/lib/cameraDashboardConstants";
 
@@ -70,6 +73,39 @@ export function createCaptureCubeCommandId() {
 
 export function createFinishCubeModeCommandId() {
   return `cmd_finish_cube_mode_${Date.now()}`;
+}
+
+export function createShutdownCommandId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return createCommandId();
+}
+
+/**
+ * @param {string | undefined | null} state
+ */
+export function normalizeCameraState(state) {
+  return typeof state === "string" ? state.trim().toLowerCase() : "";
+}
+
+/**
+ * @param {string | undefined | null} state
+ */
+export function isShutdownBlockedState(state) {
+  const s = normalizeCameraState(state);
+  if (!s) return true;
+  if (CAMERA_STATES_BLOCKING_SHUTDOWN.some((b) => normalizeCameraState(b) === s)) {
+    return true;
+  }
+  return !CAMERA_STATES_ALLOWING_SHUTDOWN.some((a) => normalizeCameraState(a) === s);
+}
+
+/**
+ * @param {string | undefined | null} state
+ */
+export function isCameraShuttingDownState(state) {
+  return normalizeCameraState(state) === CAMERA_STATE_SHUTTING_DOWN;
 }
 
 /** @param {string} command @param {Record<string, unknown>} [payload] */
