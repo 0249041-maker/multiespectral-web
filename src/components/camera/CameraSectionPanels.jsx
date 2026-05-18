@@ -547,7 +547,21 @@ function PanelCaptureSingle({ dash }) {
               onClick={capture.reconnect}
               className="ml-2 font-semibold underline"
             >
-              Reintentar
+              Reintentar conexión
+            </button>
+          </p>
+        ) : null}
+
+        {capture.startFailed && capture.startError ? (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            No se pudo activar el modo captura: <strong>{capture.startError}</strong>
+            <button
+              type="button"
+              onClick={capture.retryStartMode}
+              disabled={capture.isStarting}
+              className="ml-2 font-semibold underline disabled:opacity-50"
+            >
+              Reintentar modo captura
             </button>
           </p>
         ) : null}
@@ -586,9 +600,11 @@ function PanelCaptureSingle({ dash }) {
             <span className={capture.modeActive ? "text-emerald-700" : "text-amber-700"}>
               {capture.modeActive
                 ? capture.cameraInfo?.state ?? "cube_capture_mode"
-                : capture.isStarting
-                  ? "iniciando…"
-                  : "inactivo"}
+                : capture.startFailed
+                  ? "error al iniciar"
+                  : capture.isStarting
+                    ? "iniciando…"
+                    : "inactivo"}
             </span>
           </span>
           {capture.modeActive ? (

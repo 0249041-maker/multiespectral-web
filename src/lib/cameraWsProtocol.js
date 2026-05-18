@@ -13,6 +13,19 @@ export function isCubeCaptureCameraState(state) {
   return s === CAMERA_STATE_CUBE_CAPTURE || s === "cube_capture";
 }
 
+/**
+ * @typedef {{ state?: string, live_view?: boolean }} CameraInfoLike
+ */
+
+/**
+ * Modo captura listo: state en cube_capture_mode y live_view activo.
+ * @param {CameraInfoLike | null | undefined} cameraInfo
+ */
+export function isCubeCaptureModeFullyActive(cameraInfo) {
+  if (!isCubeCaptureCameraState(cameraInfo?.state)) return false;
+  return cameraInfo?.live_view === true;
+}
+
 const WS_URL_STORAGE_KEY = "camera-ws-url";
 
 /** Resuelve URL del WebSocket de cámara (fija > env > localStorage > default). */

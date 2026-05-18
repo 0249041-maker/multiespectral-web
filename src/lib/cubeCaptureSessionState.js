@@ -1,4 +1,7 @@
-import { isCubeCaptureCameraState } from "@/lib/cameraWsProtocol";
+import {
+  isCubeCaptureCameraState,
+  isCubeCaptureModeFullyActive,
+} from "@/lib/cameraWsProtocol";
 
 /**
  * Estado de sesión del modo captura 1× cubo (compartido entre montajes del panel).
@@ -6,12 +9,22 @@ import { isCubeCaptureCameraState } from "@/lib/cameraWsProtocol";
  */
 export const cubeCaptureSession = {
   mountCount: 0,
-  /** start enviado y aún sin ack ni status en cube_capture_mode */
-  startRequested: false,
-  /** Último state conocido de la cámara (hello/status) */
+  /** Comando start enviado y pendiente de command_done */
+  startPending: false,
+  /** Ya se intentó start en esta visita al apartado (bloquea reenvíos automáticos) */
+  startAttempted: false,
+  /** command_done de start falló; requiere reintento manual o auto limitado */
+  startFailed: false,
+  startError: "",
+  autoRetryCount: 0,
+  lastStartSentAt: 0,
   lastCameraState: "",
   finishSent: false,
 };
+
+export const CUBE_CAPTURE_LEAVE_DEFER_MS = 50;
+export const CUBE_CAPTURE_MAX_AUTO_START_RETRIES = 2;
+export const CUBE_CAPTURE_START_RETRY_COOLDOWN_MS = 5000;
 
 export function setCubeCaptureCameraState(state) {
   cubeCaptureSession.lastCameraState =
@@ -23,6 +36,13 @@ export function isCameraInCubeCaptureMode() {
 }
 
 /**
+ * @param {import("@/lib/cameraWsProtocol").CameraInfoLike | null | undefined} cameraInfo
+ */
+export function isCameraCubeCaptureLiveActive(cameraInfo) {
+  return isCubeCaptureModeFullyActive(cameraInfo);
+}
+
+/**
  * @param {string | undefined | null} [cameraState]
  */
 export function canRequestCubeCaptureStart(cameraState) {
@@ -30,27 +50,67 @@ export function canRequestCubeCaptureStart(cameraState) {
   if (cubeCaptureSession.mountCount <= 0) return false;
   if (isCubeCaptureCameraState(state)) return false;
   if (cubeCaptureSession.finishSent) return false;
-  if (cubeCaptureSession.startRequested) return false;
+  if (cubeCaptureSession.startPending) return false;
+  if (cubeCaptureSession.startAttempted) return false;
+  if (cubeCaptureSession.startFailed) return false;
   return true;
 }
 
+export function canRetryCubeCaptureStart(cameraState) {
+  const state = cameraState ?? cubeCaptureSession.lastCameraState;
+  if (cubeCaptureSession.mountCount <= 0) return false;
+  if (isCubeCaptureCameraState(state)) return false;
+  if (cubeCaptureSession.startPending) return false;
+  if (!cubeCaptureSession.startFailed) return false;
+  return true;
+}
+
+export function canScheduleAutoStartRetry() {
+  return (
+    cubeCaptureSession.startFailed &&
+    cubeCaptureSession.autoRetryCount < CUBE_CAPTURE_MAX_AUTO_START_RETRIES
+  );
+}
+
 export function markCubeCaptureStartRequested() {
-  cubeCaptureSession.startRequested = true;
+  cubeCaptureSession.startPending = true;
+  cubeCaptureSession.startAttempted = true;
+  cubeCaptureSession.startFailed = false;
+  cubeCaptureSession.startError = "";
+  cubeCaptureSession.lastStartSentAt = Date.now();
 }
 
-export function markCubeCaptureStartFailed() {
-  cubeCaptureSession.startRequested = false;
+/**
+ * @param {string} [message]
+ */
+export function markCubeCaptureStartFailed(message = "") {
+  cubeCaptureSession.startPending = false;
+  cubeCaptureSession.startFailed = true;
+  cubeCaptureSession.startError = message;
 }
 
-/** La cámara ya está en cube_capture_mode (status), sin mandar start. */
+export function markCubeCaptureAutoRetryScheduled() {
+  cubeCaptureSession.autoRetryCount += 1;
+}
+
+export function prepareCubeCaptureStartRetry() {
+  cubeCaptureSession.startPending = false;
+  cubeCaptureSession.startAttempted = false;
+  cubeCaptureSession.startFailed = false;
+  cubeCaptureSession.startError = "";
+}
+
+/** La cámara ya está en cube_capture_mode con live activo (status), sin mandar start. */
 export function applyCubeCaptureModeFromCameraStatus() {
-  cubeCaptureSession.startRequested = false;
+  cubeCaptureSession.startPending = false;
+  cubeCaptureSession.startFailed = false;
+  cubeCaptureSession.startError = "";
+  cubeCaptureSession.startAttempted = false;
   cubeCaptureSession.finishSent = false;
 }
 
 export function markCubeCaptureStartAcknowledged() {
-  cubeCaptureSession.startRequested = false;
-  cubeCaptureSession.finishSent = false;
+  applyCubeCaptureModeFromCameraStatus();
 }
 
 /**
@@ -64,12 +124,26 @@ export function canRequestCubeCaptureFinish(cameraState) {
 
 export function markCubeCaptureFinishSent() {
   cubeCaptureSession.finishSent = true;
-  cubeCaptureSession.startRequested = false;
+  cubeCaptureSession.startPending = false;
+  cubeCaptureSession.startAttempted = false;
+  cubeCaptureSession.startFailed = false;
+  cubeCaptureSession.startError = "";
 }
 
 export function resetCubeCaptureSessionAfterFinish() {
-  cubeCaptureSession.startRequested = false;
+  cubeCaptureSession.startPending = false;
+  cubeCaptureSession.startAttempted = false;
+  cubeCaptureSession.startFailed = false;
+  cubeCaptureSession.startError = "";
+  cubeCaptureSession.autoRetryCount = 0;
   cubeCaptureSession.finishSent = false;
 }
 
-export const CUBE_CAPTURE_LEAVE_DEFER_MS = 50;
+export function resetCubeCaptureSessionOnEnter() {
+  cubeCaptureSession.startPending = false;
+  cubeCaptureSession.startAttempted = false;
+  cubeCaptureSession.startFailed = false;
+  cubeCaptureSession.startError = "";
+  cubeCaptureSession.autoRetryCount = 0;
+  cubeCaptureSession.finishSent = false;
+}

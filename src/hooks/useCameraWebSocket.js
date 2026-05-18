@@ -94,6 +94,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
           camera_id: msg.camera_id,
           state: msg.state,
           message: msg.message,
+          live_view: msg.live_view ?? prev?.live_view,
         }));
         log(`[WS] hello · ${msg.camera_id ?? "camera"} · ${msg.state ?? "—"}`);
         return;
@@ -104,6 +105,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
           camera_id: msg.camera_id,
           state: msg.state,
           busy: msg.busy,
+          live_view: msg.live_view,
           current_filter_id: msg.current_filter_id,
           current_filter_nm: msg.current_filter_nm,
           last_error: msg.last_error,
@@ -117,6 +119,7 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
           camera_id: msg.camera_id ?? prev?.camera_id,
           state: msg.state ?? prev?.state,
           busy: msg.busy ?? prev?.busy,
+          live_view: msg.live_view ?? true,
           current_filter_id: msg.current_filter_id ?? prev?.current_filter_id,
           current_filter_nm: msg.current_filter_nm ?? prev?.current_filter_nm,
         }));

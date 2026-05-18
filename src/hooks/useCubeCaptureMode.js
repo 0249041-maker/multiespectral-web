@@ -2,16 +2,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { WAVELENGTH_FILTERS } from "@/lib/cameraDashboardConstants";
 import {
   CUBE_CAPTURE_LEAVE_DEFER_MS,
+  CUBE_CAPTURE_MAX_AUTO_START_RETRIES,
+  CUBE_CAPTURE_START_RETRY_COOLDOWN_MS,
   applyCubeCaptureModeFromCameraStatus,
   canRequestCubeCaptureFinish,
   canRequestCubeCaptureStart,
+  canRetryCubeCaptureStart,
+  canScheduleAutoStartRetry,
   cubeCaptureSession,
+  isCameraCubeCaptureLiveActive,
   isCameraInCubeCaptureMode,
+  markCubeCaptureAutoRetryScheduled,
   markCubeCaptureFinishSent,
   markCubeCaptureStartAcknowledged,
   markCubeCaptureStartFailed,
   markCubeCaptureStartRequested,
+  prepareCubeCaptureStartRetry,
   resetCubeCaptureSessionAfterFinish,
+  resetCubeCaptureSessionOnEnter,
   setCubeCaptureCameraState,
 } from "@/lib/cubeCaptureSessionState";
 import {
@@ -20,7 +28,9 @@ import {
   createFinishCubeModeCommandId,
   createStartCubeModeCommandId,
   findFilterById,
+  formatCommandError,
   isCubeCaptureCameraState,
+  isCubeCaptureModeFullyActive,
 } from "@/lib/cameraWsProtocol";
 import {
   useCameraCommandListener,
@@ -30,7 +40,7 @@ import {
 const DEFAULT_EXPOSURE_MS = 30;
 
 /**
- * Modo captura: start/finish según state de la cámara (status/hello), no solo flags locales.
+ * Modo captura: un solo start al entrar; sin reenvíos en cada status/render.
  */
 export function useCubeCaptureMode({
   appendLog,
@@ -42,8 +52,9 @@ export function useCubeCaptureMode({
     opticalExposureMs ?? activeWhiteReference?.exposure_ms ?? DEFAULT_EXPOSURE_MS;
 
   const [exposureMs, setExposureMs] = useState(String(initialExp));
-  const [modeActive, setModeActive] = useState(false);
   const [lastCaptureOk, setLastCaptureOk] = useState(false);
+  const [startError, setStartError] = useState("");
+  const [startFailed, setStartFailed] = useState(false);
   const [selectedFilterId, setSelectedFilterId] = useState(
     WAVELENGTH_FILTERS[2]?.id ?? 3
   );
@@ -52,6 +63,7 @@ export function useCubeCaptureMode({
   const onCaptureSuccessRef = useRef(onCaptureSuccess);
   const appendLogRef = useRef(appendLog);
   const wsApiRef = useRef(ws);
+  const autoRetryTimerRef = useRef(null);
 
   wsApiRef.current = ws;
   appendLogRef.current = appendLog;
@@ -59,6 +71,13 @@ export function useCubeCaptureMode({
   useEffect(() => {
     onCaptureSuccessRef.current = onCaptureSuccess;
   }, [onCaptureSuccess]);
+
+  const clearAutoRetryTimer = useCallback(() => {
+    if (autoRetryTimerRef.current != null) {
+      window.clearTimeout(autoRetryTimerRef.current);
+      autoRetryTimerRef.current = null;
+    }
+  }, []);
 
   const parseExposure = useCallback(() => {
     const n = Number.parseFloat(exposureMs);
@@ -71,56 +90,101 @@ export function useCubeCaptureMode({
     return state;
   }, []);
 
-  const syncModeFromCamera = useCallback(
-    (reason = "sync") => {
+  const applyModeFromCameraInfo = useCallback((cameraInfo, reason = "sync") => {
+    if (!isCubeCaptureModeFullyActive(cameraInfo)) return false;
+
+    applyCubeCaptureModeFromCameraStatus();
+    wsApiRef.current?.setLiveViewSuppressed(false);
+    setStartFailed(false);
+    setStartError("");
+    if (reason !== "status") {
+      appendLogRef.current?.(
+        `[CAPTURE] Modo activo (${cameraInfo?.state}, live_view=true) · sin reenviar start`
+      );
+    }
+    return true;
+  }, []);
+
+  const sendStartOnce = useCallback(
+    (reason = "entrada") => {
       const api = wsApiRef.current;
-      if (!api || cubeCaptureSession.mountCount <= 0) return;
+      if (!api || cubeCaptureSession.mountCount <= 0) return false;
 
-      const cameraState = readCameraState();
-      const inCubeMode = isCubeCaptureCameraState(cameraState);
+      const cameraInfo = api.cameraInfo;
+      readCameraState();
 
-      if (inCubeMode) {
-        applyCubeCaptureModeFromCameraStatus();
-        setModeActive(true);
-        api.setLiveViewSuppressed(false);
-        if (reason !== "status") {
-          appendLogRef.current?.(
-            `[CAPTURE] Cámara ya en ${cameraState} · sin reenviar start`
-          );
-        }
-        return;
+      if (applyModeFromCameraInfo(cameraInfo, reason)) {
+        return false;
       }
 
-      setModeActive(false);
+      const cameraState = cameraInfo?.state ?? cubeCaptureSession.lastCameraState;
+      if (!api.connected) return false;
+      if (api.commandPending) return false;
+      if (!canRequestCubeCaptureStart(cameraState)) return false;
 
-      if (canRequestCubeCaptureStart(cameraState) && api.connected && !api.commandPending) {
-        markCubeCaptureStartRequested();
-        const ok = api.sendCommand(
-          "start_cube_capture_mode",
-          {},
-          createStartCubeModeCommandId()
-        );
-        if (ok) {
-          appendLogRef.current?.(`[CAPTURE] → start_cube_capture_mode (${reason})`);
-        } else {
-          markCubeCaptureStartFailed();
-        }
+      markCubeCaptureStartRequested();
+      setStartFailed(false);
+      setStartError("");
+
+      const ok = api.sendCommand(
+        "start_cube_capture_mode",
+        {},
+        createStartCubeModeCommandId()
+      );
+      if (ok) {
+        appendLogRef.current?.(`[CAPTURE] → start_cube_capture_mode (${reason})`);
+      } else {
+        markCubeCaptureStartFailed("No se pudo enviar el comando.");
+        setStartFailed(true);
+        setStartError("No se pudo enviar el comando.");
       }
+      return ok;
     },
-    [readCameraState]
+    [applyModeFromCameraInfo, readCameraState]
   );
+
+  const scheduleAutoStartRetry = useCallback(() => {
+    if (!canScheduleAutoStartRetry()) return;
+    clearAutoRetryTimer();
+    markCubeCaptureAutoRetryScheduled();
+    const attempt = cubeCaptureSession.autoRetryCount;
+    appendLogRef.current?.(
+      `[CAPTURE] Reintento automático ${attempt}/${CUBE_CAPTURE_MAX_AUTO_START_RETRIES} en ${CUBE_CAPTURE_START_RETRY_COOLDOWN_MS / 1000}s…`
+    );
+    autoRetryTimerRef.current = window.setTimeout(() => {
+      autoRetryTimerRef.current = null;
+      if (cubeCaptureSession.mountCount <= 0) return;
+      if (!cubeCaptureSession.startFailed) return;
+      prepareCubeCaptureStartRetry();
+      setStartFailed(false);
+      setStartError("");
+      sendStartOnce(`auto-retry-${attempt}`);
+    }, CUBE_CAPTURE_START_RETRY_COOLDOWN_MS);
+  }, [clearAutoRetryTimer, sendStartOnce]);
+
+  const retryStartMode = useCallback(() => {
+    clearAutoRetryTimer();
+    if (!canRetryCubeCaptureStart(readCameraState())) {
+      appendLogRef.current?.("[CAPTURE] Reintento no disponible en este momento.");
+      return false;
+    }
+    prepareCubeCaptureStartRetry();
+    setStartFailed(false);
+    setStartError("");
+    return sendStartOnce("reintento-manual");
+  }, [clearAutoRetryTimer, readCameraState, sendStartOnce]);
 
   const tryFinishOnce = useCallback((reason = "salida") => {
     const api = wsApiRef.current;
     if (!api) return false;
 
+    clearAutoRetryTimer();
     const cameraState = readCameraState();
     if (!canRequestCubeCaptureFinish(cameraState)) {
       appendLogRef.current?.(
         `[CAPTURE] Sin finish (${reason}) · state=${cameraState || "—"}`
       );
       resetCubeCaptureSessionAfterFinish();
-      setModeActive(false);
       return false;
     }
 
@@ -138,67 +202,86 @@ export function useCubeCaptureMode({
       cubeCaptureSession.finishSent = false;
     }
     return ok;
-  }, [readCameraState]);
+  }, [clearAutoRetryTimer, readCameraState]);
 
   useCameraCommandListener(
-    useCallback(({ command, success }) => {
-      if (command === "start_cube_capture_mode") {
-        if (success) {
-          markCubeCaptureStartAcknowledged();
-          readCameraState();
-          if (isCameraInCubeCaptureMode()) {
-            setModeActive(true);
-            wsApiRef.current?.setLiveViewSuppressed(false);
+    useCallback(
+      ({ command, success, error }) => {
+        if (command === "start_cube_capture_mode") {
+          if (success) {
+            markCubeCaptureStartAcknowledged();
+            clearAutoRetryTimer();
+            readCameraState();
+            const info = wsApiRef.current?.cameraInfo;
+            if (isCubeCaptureModeFullyActive(info) || isCameraInCubeCaptureMode()) {
+              wsApiRef.current?.setLiveViewSuppressed(false);
+            }
+            setStartFailed(false);
+            setStartError("");
+            appendLogRef.current?.("[OK] start_cube_capture_mode · command_done");
+          } else {
+            const errMsg = formatCommandError(error);
+            markCubeCaptureStartFailed(errMsg);
+            setStartFailed(true);
+            setStartError(errMsg);
+            appendLogRef.current?.(`[ERR] start_cube_capture_mode · ${errMsg}`);
+            scheduleAutoStartRetry();
           }
-          appendLogRef.current?.("[OK] start_cube_capture_mode · command_done");
-        } else {
-          markCubeCaptureStartFailed();
-          setModeActive(isCameraInCubeCaptureMode());
-          appendLogRef.current?.("[ERR] start_cube_capture_mode falló");
         }
-      }
-      if (command === "capture_cube") {
-        setLastCaptureOk(success);
-        if (success) {
-          onCaptureSuccessRef.current?.();
-        }
-      }
-      if (command === "finish_cube_capture_mode") {
-        if (success) {
-          resetCubeCaptureSessionAfterFinish();
-          readCameraState();
-          setModeActive(isCameraInCubeCaptureMode());
-          if (!isCameraInCubeCaptureMode()) {
-            wsApiRef.current?.setLiveViewSuppressed(true);
+        if (command === "capture_cube") {
+          setLastCaptureOk(success);
+          if (success) {
+            onCaptureSuccessRef.current?.();
           }
-          appendLogRef.current?.("[OK] finish_cube_capture_mode · command_done");
-        } else {
-          cubeCaptureSession.finishSent = false;
         }
-      }
-    }, [readCameraState])
+        if (command === "finish_cube_capture_mode") {
+          if (success) {
+            resetCubeCaptureSessionAfterFinish();
+            readCameraState();
+            if (!isCameraInCubeCaptureMode()) {
+              wsApiRef.current?.setLiveViewSuppressed(true);
+            }
+            setStartFailed(false);
+            setStartError("");
+            appendLogRef.current?.("[OK] finish_cube_capture_mode · command_done");
+          } else {
+            cubeCaptureSession.finishSent = false;
+          }
+        }
+      },
+      [clearAutoRetryTimer, readCameraState, scheduleAutoStartRetry]
+    )
   );
 
   useEffect(() => {
     cubeCaptureSession.mountCount += 1;
-    syncModeFromCamera("entrada");
+    resetCubeCaptureSessionOnEnter();
+    setStartFailed(false);
+    setStartError("");
+    sendStartOnce("entrada");
 
     return () => {
       cubeCaptureSession.mountCount -= 1;
+      clearAutoRetryTimer();
 
       window.setTimeout(() => {
         if (cubeCaptureSession.mountCount > 0) return;
         tryFinishOnce("cambio de apartado");
       }, CUBE_CAPTURE_LEAVE_DEFER_MS);
     };
-  }, [syncModeFromCamera, tryFinishOnce]);
+  }, [clearAutoRetryTimer, sendStartOnce, tryFinishOnce]);
 
   useEffect(() => {
     if (cubeCaptureSession.mountCount <= 0) return;
     readCameraState();
-    setModeActive(isCameraInCubeCaptureMode());
-    syncModeFromCamera("status");
-  }, [ws.cameraInfo?.state, ws.connected, ws.commandPending, readCameraState, syncModeFromCamera]);
+    applyModeFromCameraInfo(ws.cameraInfo, "status");
+  }, [
+    ws.cameraInfo?.state,
+    ws.cameraInfo?.live_view,
+    readCameraState,
+    applyModeFromCameraInfo,
+    ws.cameraInfo,
+  ]);
 
   const applyExposure = useCallback(() => {
     ws.sendCommand("set_exposure", { exposure_ms: parseExposure() });
@@ -253,11 +336,13 @@ export function useCubeCaptureMode({
     WAVELENGTH_FILTERS[0];
 
   const cameraState = ws.cameraInfo?.state ?? cubeCaptureSession.lastCameraState;
-  const modeActiveFromCamera = isCubeCaptureCameraState(cameraState);
+  const modeActiveFromCamera = isCameraCubeCaptureLiveActive(ws.cameraInfo);
+  const startPending =
+    cubeCaptureSession.startPending ||
+    (ws.commandPending && ws.activeCommandName === "start_cube_capture_mode");
   const controlsDisabled = !modeActiveFromCamera || ws.commandPending;
   const canCapture = Boolean(modeActiveFromCamera && activeWhiteReference?.compensators);
-  const isStarting =
-    cubeCaptureSession.startRequested && !modeActiveFromCamera;
+  const isStarting = startPending || (!modeActiveFromCamera && !startFailed && cubeCaptureSession.startAttempted);
 
   return {
     ...ws,
@@ -265,6 +350,9 @@ export function useCubeCaptureMode({
     setExposureMs,
     modeActive: modeActiveFromCamera,
     isStarting,
+    startFailed,
+    startError,
+    retryStartMode,
     lastCaptureOk,
     selectedFilterId,
     activeFilter,
