@@ -16,8 +16,13 @@ function loadImageFromBlob(blob) {
   });
 }
 
-function luminanceFromRgba(r, g, b) {
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+/**
+ * Intensidad 0–1 de un píxel BMP monocromático (un canal por banda; R=G=B en disco).
+ * @param {Uint8ClampedArray} data buffer RGBA de canvas
+ * @param {number} pixelIndex índice de píxel (0 … w*h-1)
+ */
+function monochromeIntensityFromPixel(data, pixelIndex) {
+  return data[pixelIndex * 4] / 255;
 }
 
 /**
@@ -43,34 +48,42 @@ export async function computeMeanLevelFromImageUrl(url) {
   let sum = 0;
   const n = w * h;
   for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    sum += luminanceFromRgba(data[o], data[o + 1], data[o + 2]);
+    sum += monochromeIntensityFromPixel(data, i);
   }
   return Math.round(Math.max(0, Math.min(255, (sum / n) * 255)));
+}
+
+/**
+ * @param {Record<string, { url?: string, publicUrl?: string }>} filesMap
+ * @param {number} nm
+ */
+function resolveBandFileUrl(filesMap, nm) {
+  const key = String(nm);
+  let entry = filesMap[key] ?? filesMap[`${nm}.bmp`];
+  if (!entry) {
+    const found = Object.entries(filesMap).find(([k]) => k.startsWith(key));
+    entry = found?.[1];
+  }
+  return entry?.url ?? entry?.publicUrl ?? null;
 }
 
 /**
  * @param {Record<string, { url?: string }>} filesMap claves "450", "550", … o nombres de archivo
  */
 export async function computeCompensatorsFromFilesMap(filesMap) {
-  /** @type {Record<string, number>} */
-  const compensators = {};
+  const entries = await Promise.all(
+    WHITE_CALIBRATION_BANDS_NM.map(async (nm) => {
+      const key = String(nm);
+      const url = resolveBandFileUrl(filesMap, nm);
+      if (!url) {
+        throw new Error(`Falta la banda ${nm} nm en el cubo blanco.`);
+      }
+      const level = await computeMeanLevelFromImageUrl(url);
+      return [key, level];
+    })
+  );
 
-  for (const nm of WHITE_CALIBRATION_BANDS_NM) {
-    const key = String(nm);
-    let entry = filesMap[key] ?? filesMap[`${nm}.bmp`];
-    if (!entry) {
-      const found = Object.entries(filesMap).find(([k]) => k.startsWith(String(nm)));
-      entry = found?.[1];
-    }
-    const url = entry?.url ?? entry?.publicUrl;
-    if (!url) {
-      throw new Error(`Falta la banda ${nm} nm en el cubo blanco.`);
-    }
-    compensators[key] = await computeMeanLevelFromImageUrl(url);
-  }
-
-  return compensators;
+  return Object.fromEntries(entries);
 }
 
 /**
