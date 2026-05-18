@@ -1,4 +1,3 @@
-import CubeUploadPanel from "@/components/advanced/CubeUploadPanel";
 import SpectralBandColorized from "@/components/advanced/SpectralBandColorized";
 import SpectralComputedIndex from "@/components/advanced/SpectralComputedIndex";
 import SpectralNdviComposite from "@/components/advanced/SpectralNdviComposite";
@@ -82,8 +81,8 @@ function SpectralImagePreview({ visualization, bands, empty, onComputedStats }) 
     if (empty) {
       return (
         <p className="max-w-sm text-center text-sm text-slate-400">
-          Sube imágenes arriba (mínimo R y NIR) para ver la visualización. Usa
-          el desplegable para elegir NDVI u otro índice cuando tengas un cube.
+          Selecciona un cube del instrumento para ver la visualización. Usa el
+          desplegable para elegir NDVI u otro índice.
         </p>
       );
     }
@@ -257,8 +256,6 @@ export default function AdvancedMode({
     setSelectedVisualization,
     loading,
     error,
-    addCubeFromUpload,
-    reprocessSelectedCubeWithWhite,
     clearLocalCubes,
     deleteCubeById,
     deletePendingId,
@@ -342,20 +339,6 @@ export default function AdvancedMode({
     }
     return () => setSpectralCubeBands(null);
   }, [selectedCube?.bands, selectedCube?.id, setSpectralCubeBands]);
-
-  const handleCubeAccepted = async (payload) => {
-    return addCubeFromUpload({
-      files: payload.files,
-      whiteReferenceFiles: payload.whiteReferenceFiles,
-    });
-  };
-
-  const handleApplyWhiteToSelected = async (whiteReferenceFiles) => {
-    if (!selectedCube?.id) {
-      throw new Error("Selecciona un cube antes de aplicar referencia blanca.");
-    }
-    return reprocessSelectedCubeWithWhite(selectedCube.id, whiteReferenceFiles);
-  };
 
   const statsCube = selectedCube ?? cubes[0];
 
@@ -465,13 +448,6 @@ export default function AdvancedMode({
           </p>
         </div>
       )}
-
-      <CubeUploadPanel
-        onCubeAccepted={handleCubeAccepted}
-        onApplyWhiteToSelected={handleApplyWhiteToSelected}
-        hasSelectedCube={Boolean(selectedCube)}
-        disabled={loading}
-      />
 
       <details className="mb-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
         <summary className="cursor-pointer text-sm font-semibold text-slate-800">

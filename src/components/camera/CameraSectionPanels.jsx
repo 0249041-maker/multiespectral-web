@@ -1,5 +1,4 @@
 import CameraLogConsole from "@/components/camera/CameraLogConsole.jsx";
-import FocusLiveTest from "@/components/FocusLiveTest.jsx";
 import OpticalLiveView from "@/components/camera/OpticalLiveView.jsx";
 import NeoPixelRing from "@/components/camera/NeoPixelRing.jsx";
 import PanelCalWhite from "@/components/camera/PanelCalWhite.jsx";
@@ -33,74 +32,17 @@ function Card({ title, subtitle, children, className = "" }) {
   );
 }
 
-function PanelStatus() {
-  const metrics = useMemo(
-    () => [
-      { label: "CPU π", value: "34 %", tone: "text-emerald-700" },
-      { label: "Temp. SoC", value: "48 °C", tone: "text-emerald-300" },
-      { label: "RAM", value: "2.1 / 8 GB", tone: "text-slate-200" },
-      { label: "NVMe", value: "62 % usado", tone: "text-amber-200" },
-    ],
-    []
-  );
-
-  return (
-    <div className="space-y-4">
-      <Card
-        title="Estado del instrumento"
-        subtitle="Resumen operativo simulado · Raspberry Pi 5 + MVSDK"
-      >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {metrics.map((m) => (
-            <div
-              key={m.label}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
-            >
-              <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
-                {m.label}
-              </p>
-              <p className={`mt-1 font-mono text-lg ${m.tone}`}>{m.value}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 lg:col-span-2">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
-              Throughput de cubos (mock)
-            </p>
-            <div className="mt-3 flex h-28 items-end gap-1">
-              {[42, 58, 51, 63, 49, 71, 66, 74, 69, 78, 72, 80].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-t bg-gradient-to-t from-emerald-600/40 to-emerald-400/90 shadow-[0_0_10px_rgba(16,185,129,0.2)] transition-all"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-800">
-              Enlace de campo
-            </p>
-            <p className="mt-2 text-sm text-slate-600">
-              Calidad del enlace y colas de subida se mostrarán aquí cuando el backend
-              reporte telemetría real.
-            </p>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full w-[73%] animate-pulse rounded-full bg-gradient-to-r from-emerald-500 to-teal-400" />
-            </div>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
+const DEFAULT_WIFI_NETWORKS = [
+  { ssid: "Nothing", password: "Diego123", signal: 78 },
+];
 
 function PanelConfig({ dash }) {
-  const [networks, setNetworks] = useState([
-    { ssid: "Lab_Field_NIR", signal: 78 },
-    { ssid: "Greenhouse_5G", signal: 64 },
-  ]);
+  const [networks, setNetworks] = useState(DEFAULT_WIFI_NETWORKS);
+  const [editingIndex, setEditingIndex] = useState(
+    /** @type {number | null} */ (null)
+  );
+  const [draft, setDraft] = useState({ ssid: "", password: "", signal: "70" });
+  const [addingNew, setAddingNew] = useState(false);
 
   const appendLog = dash.appendLog;
 
@@ -110,30 +52,93 @@ function PanelConfig({ dash }) {
     }
   }, [networks.length, dash.completeWorkflowStep]);
 
+  const startEdit = (idx) => {
+    const n = networks[idx];
+    setAddingNew(false);
+    setEditingIndex(idx);
+    setDraft({
+      ssid: n.ssid,
+      password: n.password,
+      signal: String(n.signal),
+    });
+  };
+
+  const startAdd = () => {
+    setEditingIndex(null);
+    setAddingNew(true);
+    setDraft({ ssid: "", password: "", signal: "70" });
+  };
+
+  const cancelForm = () => {
+    setEditingIndex(null);
+    setAddingNew(false);
+    setDraft({ ssid: "", password: "", signal: "70" });
+  };
+
+  const saveForm = () => {
+    const ssid = draft.ssid.trim();
+    const password = draft.password;
+    const signal = Number.parseInt(draft.signal, 10);
+    if (!ssid) {
+      appendLog("[ERR] El nombre de la red (SSID) es obligatorio.");
+      return;
+    }
+    if (!password) {
+      appendLog("[ERR] La contraseña es obligatoria.");
+      return;
+    }
+    const entry = {
+      ssid,
+      password,
+      signal: Number.isFinite(signal) ? Math.max(0, Math.min(100, signal)) : 70,
+    };
+
+    if (addingNew) {
+      setNetworks((prev) => [...prev, entry]);
+      appendLog(`[UI] Red agregada · ${ssid}`);
+    } else if (editingIndex != null) {
+      setNetworks((prev) =>
+        prev.map((n, i) => (i === editingIndex ? entry : n))
+      );
+      appendLog(`[UI] Red actualizada · ${ssid}`);
+    }
+    cancelForm();
+  };
+
+  const showForm = addingNew || editingIndex != null;
+
   return (
-    <Card title="Redes WiFi guardadas" subtitle="Gestión local simulada (sin backend).">
+    <Card title="Redes WiFi guardadas" subtitle="Configura SSID y contraseña para el instrumento.">
       <ul className="space-y-2">
         {networks.map((n, idx) => (
           <li
-            key={n.ssid}
+            key={`${n.ssid}-${idx}`}
             className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
           >
-            <span className="font-mono text-sm text-slate-800">{n.ssid}</span>
-            <span className="font-mono text-xs text-slate-500">{n.signal}% señal</span>
+            <div className="min-w-0 flex-1">
+              <p className="font-mono text-sm font-medium text-slate-800">{n.ssid}</p>
+              <p className="font-mono text-xs text-slate-500">
+                Contraseña: {"•".repeat(Math.min(n.password.length, 12))}
+                {n.password.length > 12 ? "…" : ""} · {n.signal}% señal
+              </p>
+            </div>
             <div className="flex gap-2">
               <button
                 type="button"
                 className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                onClick={() => appendLog(`[UI] Editar contraseña (mock) · ${n.ssid}`)}
+                onClick={() => startEdit(idx)}
+                disabled={showForm}
               >
                 Editar
               </button>
               <button
                 type="button"
                 className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                disabled={showForm || networks.length <= 1}
                 onClick={() => {
                   setNetworks((prev) => prev.filter((_, i) => i !== idx));
-                  appendLog(`[UI] Red eliminada (mock) · ${n.ssid}`);
+                  appendLog(`[UI] Red eliminada · ${n.ssid}`);
+                  if (editingIndex === idx) cancelForm();
                 }}
               >
                 Eliminar
@@ -142,17 +147,73 @@ function PanelConfig({ dash }) {
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        className="mt-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
-        onClick={() => {
-          const id = `nueva_red_${networks.length + 1}`;
-          setNetworks((p) => [...p, { ssid: id, signal: 55 }]);
-          appendLog(`[UI] Agregar red (mock) · ${id}`);
-        }}
-      >
-        + Agregar red
-      </button>
+
+      {showForm ? (
+        <div className="mt-4 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+          <p className="text-sm font-medium text-slate-800">
+            {addingNew ? "Nueva red WiFi" : "Editar red WiFi"}
+          </p>
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+              Nombre de red (SSID)
+            </span>
+            <input
+              type="text"
+              value={draft.ssid}
+              onChange={(e) => setDraft((d) => ({ ...d, ssid: e.target.value }))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+              Contraseña
+            </span>
+            <input
+              type="password"
+              value={draft.password}
+              onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+              Señal estimada (%)
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={draft.signal}
+              onChange={(e) => setDraft((d) => ({ ...d, signal: e.target.value }))}
+              className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={saveForm}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Guardar
+            </button>
+            <button
+              type="button"
+              onClick={cancelForm}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="mt-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
+          onClick={startAdd}
+        >
+          + Agregar red
+        </button>
+      )}
     </Card>
   );
 }
@@ -914,19 +975,6 @@ function PanelCaptureContinuous({ dash }) {
   );
 }
 
-function PanelLive() {
-  return (
-    <div className="space-y-4">
-      <FocusLiveTest
-        fixedWsUrl={CAMERA_LIVE_WS_URL}
-        title="Vista en vivo"
-        subtitle="Stream JPEG de la cámara multiespectral en tiempo real."
-        showHelp
-      />
-    </div>
-  );
-}
-
 function PanelLeds({ dash }) {
   const { ledPattern, setLedPattern, ledColor, setLedColor } = dash;
   return (
@@ -995,8 +1043,6 @@ function PanelLogs({ dash }) {
 
 export default function CameraSectionPanels({ section, dash }) {
   switch (section) {
-    case CAMERA_SECTION_IDS.STATUS:
-      return <PanelStatus />;
     case CAMERA_SECTION_IDS.CONFIG:
       return <PanelConfig dash={dash} />;
     case CAMERA_SECTION_IDS.CAL_FILTERS:
@@ -1009,13 +1055,11 @@ export default function CameraSectionPanels({ section, dash }) {
       return <PanelCaptureSingle dash={dash} />;
     case CAMERA_SECTION_IDS.CAPTURE_CONTINUOUS:
       return <PanelCaptureContinuous dash={dash} />;
-    case CAMERA_SECTION_IDS.LIVE:
-      return <PanelLive />;
     case CAMERA_SECTION_IDS.LEDS:
       return <PanelLeds dash={dash} />;
     case CAMERA_SECTION_IDS.LOGS:
       return <PanelLogs dash={dash} />;
     default:
-      return <PanelStatus />;
+      return <PanelConfig dash={dash} />;
   }
 }

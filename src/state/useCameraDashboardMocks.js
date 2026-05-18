@@ -25,7 +25,7 @@ function ts() {
  */
 
 export function useCameraDashboardMocks() {
-  const [section, setSection] = useState(CAMERA_SECTION_IDS.STATUS);
+  const [section, setSection] = useState(CAMERA_SECTION_IDS.CONFIG);
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [globalStatusKey, setGlobalStatusKey] = useState("online");
   const [online, setOnline] = useState(true);
@@ -90,7 +90,6 @@ export function useCameraDashboardMocks() {
     () => ({
       section,
       setSection,
-      goLive: () => setSection(CAMERA_SECTION_IDS.LIVE),
     }),
     [section]
   );

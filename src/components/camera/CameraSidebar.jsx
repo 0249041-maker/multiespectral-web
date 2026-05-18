@@ -31,7 +31,6 @@ function NavIcon({ id }) {
 }
 
 const GROUP_ICON = {
-  Instrumentación: "instrument",
   Sistema: "sys",
 };
 
@@ -167,10 +166,6 @@ export default function CameraSidebar({ activeId, onSelect, workflowStatus }) {
         <p className="mt-1 text-xs text-slate-500">Raspberry Pi 5 · multiespectral</p>
       </div>
       <nav className="flex flex-1 gap-1 overflow-x-auto px-2 py-2 lg:flex-col lg:overflow-y-auto lg:px-2 lg:py-3">
-        {CAMERA_NAV_GROUPS.filter((g) => g.label === "Instrumentación").map((group) => (
-          <NavGroup key={group.label} group={group} activeId={activeId} onSelect={onSelect} />
-        ))}
-
         <div className="lg:mb-2 lg:mt-1">
           <p className="hidden px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 lg:block">
             Flujo de trabajo

@@ -58,13 +58,6 @@ export const CAMERA_WORKFLOW_STEPS = [
 
 export const CAMERA_NAV_GROUPS = [
   {
-    label: "Instrumentación",
-    items: [
-      { id: CAMERA_SECTION_IDS.STATUS, label: "Estado", short: "Estado" },
-      { id: CAMERA_SECTION_IDS.LIVE, label: "Vista en vivo", short: "Live" },
-    ],
-  },
-  {
     label: "Sistema",
     items: [
       { id: CAMERA_SECTION_IDS.LEDS, label: "LEDs", short: "NeoPixel" },
