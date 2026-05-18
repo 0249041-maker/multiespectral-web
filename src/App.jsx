@@ -1,5 +1,6 @@
 import BrowserTabBar from "./components/BrowserTabBar.jsx";
 import SupabaseEnvBanner from "./components/SupabaseEnvBanner.jsx";
+import { CameraDashboardProvider } from "./context/CameraDashboardContext.jsx";
 import { StrawberryDetectionProvider } from "./context/StrawberryDetectionContext.jsx";
 import CameraControlPage from "./pages/CameraControlPage.jsx";
 import DashboardBasic from "./pages/DashboardBasic.jsx";
@@ -12,6 +13,7 @@ function App() {
 
   return (
     <StrawberryDetectionProvider>
+      <CameraDashboardProvider>
       <div className="flex min-h-screen flex-col bg-slate-50">
         <SupabaseEnvBanner />
         <header className="w-full bg-white">
@@ -57,6 +59,7 @@ function App() {
           </div>
         )}
       </div>
+      </CameraDashboardProvider>
     </StrawberryDetectionProvider>
   );
 }

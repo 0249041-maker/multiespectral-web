@@ -4,14 +4,14 @@ import CameraSidebar from "@/components/camera/CameraSidebar.jsx";
 import ShutdownModal from "@/components/camera/ShutdownModal.jsx";
 import { CameraWebSocketProvider } from "@/context/CameraWebSocketContext";
 import { CAMERA_LIVE_WS_URL } from "@/lib/cameraDashboardConstants";
-import { useCameraDashboardMocks } from "@/state/useCameraDashboardMocks";
+import { useCameraDashboard } from "@/context/CameraDashboardContext";
 
 /**
  * Layout principal del panel de cámara (solo UI / mocks).
  * Paleta alineada con el dashboard principal: slate-50, blanco, acento esmeralda.
  */
 export default function CameraDashboardLayout({ embedded = false, onBack }) {
-  const dash = useCameraDashboardMocks();
+  const dash = useCameraDashboard();
 
   const shellClass = embedded
     ? "flex min-h-0 flex-1 flex-col bg-slate-50 text-slate-900"
