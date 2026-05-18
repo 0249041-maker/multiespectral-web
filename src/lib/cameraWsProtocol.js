@@ -1,4 +1,17 @@
-import { CAMERA_LIVE_WS_URL, WAVELENGTH_FILTERS } from "@/lib/cameraDashboardConstants";
+import {
+  CAMERA_LIVE_WS_URL,
+  CAMERA_STATE_CUBE_CAPTURE,
+  WAVELENGTH_FILTERS,
+} from "@/lib/cameraDashboardConstants";
+
+/**
+ * @param {string | undefined | null} state
+ */
+export function isCubeCaptureCameraState(state) {
+  if (typeof state !== "string" || !state.trim()) return false;
+  const s = state.trim().toLowerCase();
+  return s === CAMERA_STATE_CUBE_CAPTURE || s === "cube_capture";
+}
 
 const WS_URL_STORAGE_KEY = "camera-ws-url";
 

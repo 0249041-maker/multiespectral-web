@@ -111,6 +111,19 @@ export function useCameraWebSocket({ wsUrl: fixedWsUrl, appendLog, onCommandDone
         return;
       }
 
+      if (type === "live_started") {
+        setCameraInfo((prev) => ({
+          ...prev,
+          camera_id: msg.camera_id ?? prev?.camera_id,
+          state: msg.state ?? prev?.state,
+          busy: msg.busy ?? prev?.busy,
+          current_filter_id: msg.current_filter_id ?? prev?.current_filter_id,
+          current_filter_nm: msg.current_filter_nm ?? prev?.current_filter_nm,
+        }));
+        log(`[WS] live_started · ${msg.state ?? "—"}`);
+        return;
+      }
+
       if (type === "live_paused") {
         livePausedRef.current = true;
         setLivePaused(true);

@@ -99,6 +99,9 @@ export const GLOBAL_STATUS_LABELS = {
 /** WebSocket de vista en vivo para calibraciones (y stream de cámara en producción). */
 export const CAMERA_LIVE_WS_URL = "wss://camera.multispectralcam.com";
 
+/** Valor de `state` en mensajes hello/status cuando la cámara está en captura de cubo. */
+export const CAMERA_STATE_CUBE_CAPTURE = "cube_capture_mode";
+
 /** Bucket Storage: una carpeta por compensador blanco (Raspberry / capturas). */
 export const WHITE_COMPENSATORS_BUCKET =
   import.meta.env.VITE_SUPABASE_WHITE_BUCKET || "white_compensators";
