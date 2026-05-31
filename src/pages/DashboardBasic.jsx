@@ -1,28 +1,36 @@
+import { useMemo, useState } from "react";
+import InfoTooltip from "@/components/InfoTooltip";
 import { useStrawberryDetection } from "@/context/StrawberryDetectionContext";
-import { getMaturityThresholds } from "@/lib/strawberryMaturity";
-import { useDashboardData } from "@/state/useDashboardData";
+import { useLeafNdvi } from "@/hooks/useLeafNdvi";
 
-function StatCard({ title, subtitle, value, detail }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {title}
-      </p>
-      <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
-      {detail != null && detail !== false && (
-        <p className="mt-1 text-xs text-slate-500">{detail}</p>
-      )}
-    </div>
-  );
+const WEEKDAYS_ES = [
+  "Domingo",
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+];
+
+/** Días desde +1 hasta +5 con etiquetas: Mañana, Pasado, y luego día de la semana. */
+function buildDayOptions() {
+  const today = new Date();
+  const options = [];
+  for (let d = 1; d <= 5; d += 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + d);
+    let label;
+    if (d === 1) label = "Mañana";
+    else if (d === 2) label = "Pasado";
+    else label = WEEKDAYS_ES[date.getDay()];
+    options.push({ offset: d, label });
+  }
+  return options;
 }
 
 function countByMaturity(fruitBoxes) {
-  const acc = {
-    inmadura: 0,
-    madura: 0,
-    sobremadura: 0,
-  };
+  const acc = { inmadura: 0, madura: 0, sobremadura: 0 };
   for (const b of fruitBoxes) {
     const k = b.maturity;
     if (!k) continue;
@@ -35,175 +43,149 @@ function countByMaturity(fruitBoxes) {
   return acc;
 }
 
-/** Inmaduros con mayoría roja en VARI (redCoverage) pero clase ≠ madura: casi listos. */
-function countAlmostRipeNotYetMadura(fruitBoxes) {
-  const minRed = getMaturityThresholds().redCoverageForMaduraMin;
-  let n = 0;
-  for (const b of fruitBoxes) {
-    if (b.maturity !== "inmadura") continue;
-    const rc = b.indices?.redCoverage;
-    if (typeof rc === "number" && Number.isFinite(rc) && rc >= minRed) {
-      n += 1;
-    }
-  }
-  return n;
+/** Regla simple: 85% de inmaduros maduran en 3 días (lineal hasta el día 3). */
+function projectedRipeForDay({ inmaduros, maduros, offset }) {
+  const fraction = Math.min(1, offset / 3) * 0.85;
+  return Math.round(maduros + inmaduros * fraction);
+}
+
+function MaturityCountCard({ title, value, hasData, info }) {
+  return (
+    <div className="relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-lg font-semibold uppercase tracking-wide text-slate-800">
+          {title}
+        </p>
+        {info ? <InfoTooltip label={`Más información ${title}`}>{info}</InfoTooltip> : null}
+      </div>
+      <p className="mt-4 text-3xl font-semibold text-slate-900">
+        {hasData ? value : "—"}
+      </p>
+    </div>
+  );
+}
+
+function StatCard({ title, value, hasData, info, footer }) {
+  return (
+    <div className="relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {title}
+        </p>
+        {info ? <InfoTooltip label={`Más información ${title}`}>{info}</InfoTooltip> : null}
+      </div>
+      <p className="mt-3 text-2xl font-semibold text-slate-900">
+        {hasData ? value : "—"}
+      </p>
+      {footer}
+    </div>
+  );
+}
+
+function DaySelector({ value, onChange, options }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(Number.parseInt(e.target.value, 10))}
+      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+    >
+      {options.map((o) => (
+        <option key={o.offset} value={o.offset}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
-  const { data, loading, error, warning } = useDashboardData();
   const {
     fruitCount,
     fruitBoxes,
-    lastError,
     lastRunAt,
     spectralCubeSelection,
-    selectedCubeNdviStats,
+    spectralCubeBands,
     lastDetectionCubeId,
+    lastDetectionImageSize,
   } = useStrawberryDetection();
-
-  const todayLabel = new Date().toLocaleDateString("es-ES", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
 
   const selectedId = spectralCubeSelection?.id ?? null;
   const selectedLabel = spectralCubeSelection?.label ?? null;
+
   const detectionMatchesCube = Boolean(
-    selectedId &&
-      lastDetectionCubeId &&
-      lastDetectionCubeId === selectedId
+    selectedId && lastDetectionCubeId && lastDetectionCubeId === selectedId
   );
   const hasBoxes = Array.isArray(fruitBoxes) && fruitBoxes.length > 0;
-  const hasMaturity =
-    hasBoxes && fruitBoxes.some((b) => Boolean(b.maturity));
-  const maturityCounts =
-    detectionMatchesCube && hasMaturity ? countByMaturity(fruitBoxes) : null;
-  const showZeros = detectionMatchesCube && hasBoxes && !hasMaturity;
-  const useCubeHarvestCards =
-    Boolean(detectionMatchesCube && hasMaturity && maturityCounts);
-  const cubeMaduros = useCubeHarvestCards ? maturityCounts.madura : null;
-  const cubePorMadurar = useCubeHarvestCards
-    ? countAlmostRipeNotYetMadura(fruitBoxes)
+  const hasMaturity = hasBoxes && fruitBoxes.some((b) => Boolean(b.maturity));
+
+  // Datos visibles solo si la detección y madurez corresponden al cube seleccionado.
+  const dataReady = detectionMatchesCube && hasMaturity;
+  const maturityCounts = dataReady ? countByMaturity(fruitBoxes) : null;
+
+  const cubeInmaduros = maturityCounts?.inmadura ?? 0;
+  const cubeMaduros = maturityCounts?.madura ?? 0;
+  const cubeSobremaduros = maturityCounts?.sobremadura ?? 0;
+
+  const dayOptions = useMemo(() => buildDayOptions(), []);
+  const [predOffset, setPredOffset] = useState(dayOptions[0]?.offset ?? 1);
+  const [workersOffset, setWorkersOffset] = useState(dayOptions[0]?.offset ?? 1);
+
+  const projectedRipe = dataReady
+    ? projectedRipeForDay({
+        inmaduros: cubeInmaduros,
+        maduros: cubeMaduros,
+        offset: predOffset,
+      })
     : null;
-  const personsToday01 =
-    useCubeHarvestCards && cubeMaduros != null
-      ? cubeMaduros > 0
-        ? 1
-        : 0
+
+  const projectedRipeForWorkers = dataReady
+    ? projectedRipeForDay({
+        inmaduros: cubeInmaduros,
+        maduros: cubeMaduros,
+        offset: workersOffset,
+      })
+    : null;
+
+  const personsTodayRule = dataReady
+    ? Math.max(1, Math.ceil(cubeMaduros / 60))
+    : null;
+  const personsForFutureDay =
+    projectedRipeForWorkers != null
+      ? Math.max(1, Math.ceil(projectedRipeForWorkers / 60))
       : null;
-  const personsTomorrow01 =
-    useCubeHarvestCards && cubePorMadurar != null
-      ? cubePorMadurar > 0
-        ? 1
-        : 0
-      : null;
 
-  let maturityRowHint = null;
-  if (!selectedId) {
-    maturityRowHint =
-      "Abre «Ver modo avanzado» y selecciona un cube en la lista lateral.";
-  } else if (!lastRunAt) {
-    maturityRowHint =
-      "Pulsa «Detectar frutos» abajo usando el RGB del cube seleccionado.";
-  } else if (!detectionMatchesCube) {
-    maturityRowHint =
-      "La última detección no corresponde a este cube; vuelve a ejecutar detección con el cube actual.";
-  } else if (!hasMaturity && hasBoxes) {
-    maturityRowHint =
-      "Hay frutos detectados pero sin madurez espectral: el cube necesita las 5 bandas (R,G,B,RE,NIR).";
-  } else if (detectionMatchesCube && !hasBoxes) {
-    maturityRowHint =
-      "Última ejecución con este cube: 0 frutos detectados.";
-  }
+  // NDVI promedio de hojas (excluyendo cajas de fruto) sobre el cube seleccionado.
+  const leaf = useLeafNdvi({
+    cubeId: selectedId,
+    bands: spectralCubeBands,
+    boxes: fruitBoxes,
+    imageWidth: lastDetectionImageSize?.width ?? null,
+    imageHeight: lastDetectionImageSize?.height ?? null,
+  });
 
-  const formatMaturityCell = (key) => {
-    if (maturityCounts) return `${maturityCounts[key]} fresas`;
-    if (showZeros) return "0 fresas";
-    return "—";
-  };
-
-  if (loading) {
-    return (
-      <section aria-label="Dashboard básico">
-        <p className="text-sm text-slate-500">Cargando indicadores…</p>
-      </section>
-    );
-  }
-
-  if (error && !data) {
-    return (
-      <section aria-label="Dashboard básico">
-        <p className="text-sm text-red-600">
-          Ocurrió un error al cargar los datos: {error}
-        </p>
-      </section>
-    );
-  }
-
-  if (!data) {
-    return (
-      <section aria-label="Dashboard básico">
-        <p className="text-sm text-red-600">
-          No hay datos para mostrar. Revisa la consola o la conexión.
-        </p>
-      </section>
-    );
-  }
-
-  const {
-    avgMaturationDays,
-    todayPrediction,
-    tomorrowPrediction,
-    todayWorkers,
-    tomorrowWorkers,
-    ndviAverage,
-    ndviStatus,
-  } = data;
-
-  const currentNdviMean = selectedCubeNdviStats?.mean ?? ndviAverage;
-  const currentNdviStatus =
-    selectedCubeNdviStats?.mean != null
-      ? selectedCubeNdviStats.mean >= 0.6
+  const leafNdviMean = leaf.mean;
+  const leafNdviStatus =
+    leafNdviMean == null
+      ? "—"
+      : leafNdviMean >= 0.6
         ? "Bueno"
-        : selectedCubeNdviStats.mean >= 0.35
+        : leafNdviMean >= 0.35
           ? "Moderado"
-          : "Bajo"
-      : ndviStatus;
-  const ndviSourceLabel = selectedCubeNdviStats
-    ? selectedLabel
-      ? `NDVI calculado del cube ${selectedLabel}.`
-      : "NDVI calculado del cube seleccionado."
-    : "NDVI general (sin cube seleccionado con stats NDVI).";
+          : "Bajo";
+
+  const cubeText = selectedLabel ? `Cube: ${selectedLabel}` : "Cube: —";
+
+  // Frutos detectados que se muestra junto al cube: solo cuando la detección
+  // proviene de yolo sobre el cube seleccionado.
+  const detectionLabel =
+    detectionMatchesCube && typeof fruitCount === "number"
+      ? `Frutos detectados: ${fruitCount}`
+      : "Frutos detectados: —";
 
   return (
     <section aria-label="Dashboard básico" className="space-y-4">
-      {warning && (
-        <div
-          role="status"
-          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-        >
-          <p className="font-medium text-amber-900">Aviso</p>
-          <p className="mt-1 text-amber-800">{warning}</p>
-          <p className="mt-2 text-xs text-amber-800/90">
-            Para datos reales, crea la tabla{" "}
-            <code className="rounded bg-amber-100 px-1">fruit_counts</code> en
-            Supabase y políticas de lectura para{" "}
-            <code className="rounded bg-amber-100 px-1">anon</code>, o revisa
-            URL/clave en Vercel.
-          </p>
-        </div>
-      )}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">
-            Modo básico (agricultor)
-          </h2>
-          <p className="text-sm text-slate-500">
-            Resumen de maduración y cosecha a partir de datos multiespectrales.
-          </p>
-        </div>
+        <h2 className="text-xl font-semibold text-slate-900">Modo básico</h2>
         <button
           type="button"
           onClick={onToggleAdvanced}
@@ -214,152 +196,163 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
       </div>
 
       <div className="rounded-xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 to-white p-4 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-          Hoy · fresas por madurez (cube seleccionado)
-        </p>
-        <p className="mt-1 text-sm text-slate-600">
-          <span className="capitalize">{todayLabel}</span>
-          {selectedLabel ? (
-            <>
-              {" "}
-              · Cube:{" "}
-              <span className="font-medium text-slate-800">{selectedLabel}</span>
-            </>
-          ) : (
-            <span className="text-amber-800"> · Sin cube seleccionado aún</span>
-          )}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-emerald-900">{cubeText}</p>
+          <p className="text-sm font-medium text-emerald-900">{detectionLabel}</p>
+        </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard
+          <MaturityCountCard
             title="Inmaduras"
-            subtitle="Verdes / poca maduración"
-            value={formatMaturityCell("inmadura")}
-            detail={false}
+            value={`${cubeInmaduros} fresas`}
+            hasData={dataReady}
+            info={
+              <>
+                Frutos clasificados como <strong>inmaduros</strong> según los
+                índices espectrales (GNDVI, CIre, SIPI, VARI) dentro de cada
+                caja de detección.
+              </>
+            }
           />
-          <StatCard
+          <MaturityCountCard
             title="Maduras"
-            subtitle="Listas para consumo óptimo"
-            value={formatMaturityCell("madura")}
-            detail={false}
+            value={`${cubeMaduros} fresas`}
+            hasData={dataReady}
+            info={
+              <>
+                Frutos clasificados como <strong>maduros</strong> y listos para
+                consumo a partir de los índices espectrales del cube
+                seleccionado.
+              </>
+            }
           />
-          <StatCard
+          <MaturityCountCard
             title="Sobremaduras"
-            subtitle="Pasadas de punto"
-            value={formatMaturityCell("sobremadura")}
-            detail={false}
+            value={`${cubeSobremaduros} fresas`}
+            hasData={dataReady}
+            info={
+              <>
+                Frutos clasificados como <strong>sobremaduros</strong> (pasados
+                de punto) según los umbrales de madurez del cube seleccionado.
+              </>
+            }
           />
         </div>
-        {maturityRowHint ? (
-          <p className="mt-3 text-xs text-slate-600">{maturityRowHint}</p>
-        ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Frutos detectados (YOLO)"
-          subtitle="RGB multiespectral (modo avanzado) o imagen subida"
-          value={fruitCount != null ? `${fruitCount} frutos` : "—"}
-          detail={
-            lastError ? (
-              <span className="text-red-600">{lastError}</span>
-            ) : lastRunAt ? (
-              `Última prueba: ${new Date(lastRunAt).toLocaleString("es-ES")}`
-            ) : (
-              "Sin pruebas aún (panel de detección abajo)."
-            )
+          title="Predicción de maduración · Hoy"
+          value={dataReady ? `${cubeMaduros} frutos` : "—"}
+          hasData={dataReady}
+          info={
+            <>
+              Cantidad de frutos clasificados como <strong>maduros</strong> en
+              la última detección del cube seleccionado.
+            </>
           }
         />
-        <StatCard
-          title="Tiempo promedio de maduración"
-          subtitle="Días por fruto"
-          value={`${avgMaturationDays.toFixed(1)} días`}
-        />
+
         <StatCard
           title="Predicción de maduración"
-          subtitle="Hoy"
-          value={
-            cubeMaduros != null
-              ? `${cubeMaduros} frutos`
-              : `${todayPrediction.fruits} frutos`
+          value={dataReady ? `${projectedRipe} frutos` : "—"}
+          hasData={dataReady}
+          info={
+            <>
+              Estimación basada en una regla sencilla: el 85% de los frutos
+              inmaduros madura en 3 días (lineal hasta el día 3). Se añade a los
+              frutos actualmente maduros del cube.
+            </>
           }
-          detail={
-            cubeMaduros != null
-              ? "Frutos clasificados como maduros (cube seleccionado)."
-              : `${todayPrediction.percentage}% del total estimado`
+          footer={
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500">
+                Día
+              </span>
+              <DaySelector
+                value={predOffset}
+                onChange={setPredOffset}
+                options={dayOptions}
+              />
+            </div>
           }
         />
+
         <StatCard
-          title="Predicción de maduración"
-          subtitle="Mañana"
-          value={
-            cubePorMadurar != null
-              ? `${cubePorMadurar} frutos`
-              : `${tomorrowPrediction.fruits} frutos`
-          }
-          detail={
-            cubePorMadurar != null
-              ? "Inmaduros con mayoría roja en VARI, aún no maduros."
-              : `${tomorrowPrediction.percentage}% del total estimado`
+          title="Personas para recolectar · Hoy"
+          value={dataReady ? `${personsTodayRule} personas` : "—"}
+          hasData={dataReady}
+          info={
+            <>
+              Estimación: <strong>1 persona por cada 60 frutos maduros</strong>{" "}
+              hoy (mínimo 1). Es una heurística simple a partir del recuento del
+              cube.
+            </>
           }
         />
-        <StatCard
-          title="Personas para recolectar"
-          subtitle="Hoy"
-          value={
-            personsToday01 != null
-              ? String(personsToday01)
-              : `${todayWorkers} personas`
-          }
-          detail={
-            personsToday01 != null
-              ? personsToday01 === 1
-                ? "Hay frutos maduros en el cube (indicador 1/0)."
-                : "Sin frutos maduros en el cube (indicador 1/0)."
-              : false
-          }
-        />
+
         <StatCard
           title="Personas para recolectar"
-          subtitle="Mañana"
           value={
-            personsTomorrow01 != null
-              ? String(personsTomorrow01)
-              : `${tomorrowWorkers} personas`
+            personsForFutureDay != null ? `${personsForFutureDay} personas` : "—"
           }
-          detail={
-            personsTomorrow01 != null
-              ? personsTomorrow01 === 1
-                ? "Hay frutos por madurar pronto (indicador 1/0)."
-                : "Sin frutos en ese umbral (indicador 1/0)."
-              : false
+          hasData={dataReady}
+          info={
+            <>
+              Se calcula a partir de la <strong>proyección de frutos maduros</strong>{" "}
+              para el día elegido (regla del 85% de inmaduros en 3 días) y la
+              relación 1 persona por cada 60 frutos.
+            </>
+          }
+          footer={
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500">
+                Día
+              </span>
+              <DaySelector
+                value={workersOffset}
+                onChange={setWorkersOffset}
+                options={dayOptions}
+              />
+            </div>
           }
         />
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Salud general del cultivo
+            <p className="text-lg font-semibold uppercase tracking-wide text-slate-800">
+              Salud general
             </p>
             <p className="mt-1 text-sm text-slate-500">Basado en promedio NDVI</p>
           </div>
-          <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-            {currentNdviStatus}
-          </span>
-        </div>
-        <div className="mt-4 flex items-end justify-between">
-          <div>
-            <p className="text-xs text-slate-500">NDVI promedio</p>
-            <p className="text-2xl font-semibold text-slate-900">
-              {currentNdviMean.toFixed(2)}
-            </p>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              {leafNdviStatus}
+            </span>
+            <InfoTooltip label="Más información salud general">
+              <>
+                NDVI promedio calculado sobre los <strong>píxeles de hojas</strong>{" "}
+                (excluyendo cajas de fruto detectadas por YOLO) del cube
+                seleccionado. Un NDVI más alto indica vegetación más vigorosa.
+              </>
+            </InfoTooltip>
           </div>
+        </div>
+        <div className="mt-4 flex items-end justify-between gap-3">
+          <p className="text-3xl font-semibold text-slate-900">
+            {leaf.loading
+              ? "…"
+              : leafNdviMean != null
+                ? leafNdviMean.toFixed(2)
+                : "—"}
+          </p>
           <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-red-400 via-yellow-300 to-emerald-500" />
         </div>
-        <p className="mt-3 text-xs text-slate-500">{ndviSourceLabel}</p>
+        {leaf.error ? (
+          <p className="mt-2 text-xs text-red-600">{leaf.error}</p>
+        ) : null}
       </div>
     </section>
   );
 }
-

@@ -234,7 +234,7 @@ async function runInferenceOnCrop(session, sourceBmp, crop, confThreshold, iouTh
   }
 }
 
-export default function StrawberryDetectionLab() {
+export default function StrawberryDetectionLab({ children } = {}) {
   const {
     setDetectionResult,
     spectralRgbBitmap,
@@ -369,6 +369,8 @@ export default function StrawberryDetectionLab() {
       setDetectionResult(mapped.length, null, {
         boxes: boxesForUi,
         cubeId: spectralCubeSelection?.id ?? null,
+        imageWidth: bmp.width,
+        imageHeight: bmp.height,
       });
 
       const canvas = canvasRef.current;
@@ -434,22 +436,12 @@ export default function StrawberryDetectionLab() {
 
   return (
     <section
-      aria-label="Pruebas de detección de frutos"
+      aria-label="Detección y resultados"
       className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">
-            Pruebas de detección (RGB · YOLOv11 ONNX)
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Si en <strong>modo avanzado</strong> generas la vista{" "}
-            <strong>RGB</strong> del cube multiespectral, esa imagen se usa
-            automáticamente para YOLO. Si no, sube una imagen RGB aquí. El
-            conteo se muestra arriba en modo básico.
-          </p>
-        </div>
-      </div>
+      <h2 className="text-xl font-semibold text-slate-900">
+        Detección y resultados
+      </h2>
 
       {spectralRgbBitmap ? (
         <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
@@ -506,6 +498,8 @@ export default function StrawberryDetectionLab() {
           Vista previa y cajas de detección (verde)
         </p>
       </div>
+
+      {children}
     </section>
   );
 }

@@ -177,18 +177,50 @@ function applyMergedState(
   }
 }
 
+const CUBE_LABELS_STORAGE_KEY = "spectral-cube-labels-v1";
+
+function loadCubeLabelOverrides() {
+  try {
+    const raw = window.localStorage.getItem(CUBE_LABELS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCubeLabelOverride(id, label) {
+  try {
+    const map = loadCubeLabelOverrides();
+    if (label) map[id] = label;
+    else delete map[id];
+    window.localStorage.setItem(CUBE_LABELS_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function applyLabelOverrides(list) {
+  const overrides = loadCubeLabelOverrides();
+  if (!list?.length) return list;
+  return list.map((c) =>
+    overrides[c.id] ? { ...c, label: overrides[c.id] } : c
+  );
+}
+
 export function useSpectralCubes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [cubes, setCubes] = useState([]);
   const [selectedCubeId, setSelectedCubeId] = useState(null);
-  const [selectedVisualization, setSelectedVisualization] = useState("NDVI");
+  const [selectedVisualization, setSelectedVisualization] = useState("RGB natural");
   const [deletePendingId, setDeletePendingId] = useState(null);
 
   const refreshCubes = useCallback(async (selectIdAfter = null) => {
     const { merged, supabaseError } = await loadMergedCubes();
     applyMergedState(
-      merged,
+      applyLabelOverrides(merged),
       supabaseError,
       setCubes,
       setSelectedCubeId,
@@ -206,7 +238,7 @@ export function useSpectralCubes() {
       if (cancelled) return;
 
       applyMergedState(
-        merged,
+        applyLabelOverrides(merged),
         supabaseError,
         setCubes,
         setSelectedCubeId,
@@ -222,6 +254,14 @@ export function useSpectralCubes() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  const renameCube = useCallback((id, newLabel) => {
+    if (!id) return;
+    const label = String(newLabel ?? "").trim();
+    if (!label) return;
+    persistCubeLabelOverride(id, label);
+    setCubes((prev) => prev.map((c) => (c.id === id ? { ...c, label } : c)));
   }, []);
 
   /**
@@ -517,5 +557,6 @@ export function useSpectralCubes() {
     deletePendingId,
     refreshCubes,
     reprocessSelectedCubeWithWhite,
+    renameCube,
   };
 }

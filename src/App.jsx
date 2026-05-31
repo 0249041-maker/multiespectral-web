@@ -48,10 +48,7 @@ function App() {
               onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
               advancedVisible={showAdvanced}
             />
-            <AdvancedMode
-              uiVisible={showAdvanced}
-              onOpenCamera={() => setActiveTab("camera")}
-            />
+            <AdvancedMode uiVisible={showAdvanced} />
           </main>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">

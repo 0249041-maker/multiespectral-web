@@ -24,6 +24,8 @@ export function StrawberryDetectionProvider({ children }) {
   const [selectedCubeNdviStats, setSelectedCubeNdviStats] = useState(null);
   /** Cube con el que se ejecutó la última detección válida (madurez acoplada). */
   const [lastDetectionCubeId, setLastDetectionCubeId] = useState(null);
+  /** Dimensiones (px) del bitmap usado en la última detección. */
+  const [lastDetectionImageSize, setLastDetectionImageSize] = useState(null);
   /** Última salida de YOLO + madurez (si se pudo calcular). */
   const [fruitBoxes, setFruitBoxes] = useState(null);
   /** RGB compuesto multiespectral (modo avanzado) para inferencia YOLO. */
@@ -36,6 +38,7 @@ export function StrawberryDetectionProvider({ children }) {
       setFruitCount(null);
       setFruitBoxes(null);
       setLastDetectionCubeId(null);
+      setLastDetectionImageSize(null);
       setLastError(typeof err === "string" ? err : err?.message ?? String(err));
     } else {
       setFruitCount(typeof count === "number" ? count : null);
@@ -44,6 +47,13 @@ export function StrawberryDetectionProvider({ children }) {
       setFruitBoxes(Array.isArray(boxes) ? boxes : null);
       const cid = extras?.cubeId;
       setLastDetectionCubeId(typeof cid === "string" && cid ? cid : null);
+      const w = extras?.imageWidth;
+      const h = extras?.imageHeight;
+      if (typeof w === "number" && typeof h === "number" && w > 0 && h > 0) {
+        setLastDetectionImageSize({ width: w, height: h });
+      } else {
+        setLastDetectionImageSize(null);
+      }
     }
     setLastRunAt(new Date().toISOString());
   }, []);
@@ -79,6 +89,7 @@ export function StrawberryDetectionProvider({ children }) {
       selectedCubeNdviStats,
       setSelectedCubeNdviStats,
       lastDetectionCubeId,
+      lastDetectionImageSize,
       spectralRgbBitmap,
       spectralRgbBlob,
       setSpectralRgbBitmap,
@@ -97,6 +108,7 @@ export function StrawberryDetectionProvider({ children }) {
       selectedCubeNdviStats,
       setSelectedCubeNdviStats,
       lastDetectionCubeId,
+      lastDetectionImageSize,
       spectralRgbBitmap,
       spectralRgbBlob,
       setSpectralRgbBitmap,
