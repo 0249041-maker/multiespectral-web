@@ -81,12 +81,27 @@ export function ndviToRgb(ndvi) {
 }
 
 /**
+ * Factor de compensación por banda: `factor = 255 / compensador`. Si no es
+ * válido, devuelve 1 (sin compensar).
+ * @param {number | null | undefined} comp valor 0..255
+ */
+function compFactor(comp) {
+  const n = Number(comp);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  const norm = n / 255;
+  return norm > 1e-3 ? 1 / norm : 1;
+}
+
+/**
  * Núcleo NDVI con alineación NIR→R (idéntica a composición RGB / índices).
+ * Si se proveen `compensators` (intensidad media 0..255 del blanco por banda),
+ * se aplica `NIR_C = NIR/(comp.nir/255)` y `R_C = R/(comp.r/255)` antes del NDVI.
  * @param {HTMLImageElement} redImg
  * @param {HTMLImageElement} nirImg
+ * @param {{ compensators?: import("./cubeCompensators").CompensatorsByBand | null }} [options]
  * @returns {Promise<{ blob: Blob; stats: { mean: number; min: number; max: number }; width: number; height: number }>}
  */
-async function computeNdviFromImages(redImg, nirImg) {
+async function computeNdviFromImages(redImg, nirImg, options = {}) {
   if (redImg.width !== nirImg.width || redImg.height !== nirImg.height) {
     throw new Error(
       `Las imágenes deben tener el mismo tamaño (R: ${redImg.width}×${redImg.height}, NIR: ${nirImg.width}×${nirImg.height}).`
@@ -103,6 +118,9 @@ async function computeNdviFromImages(redImg, nirImg) {
   const shift = alignToRef(nirImg);
   const nirLum = applyShiftFloat32(nirLumRaw, w, h, shift.dx, shift.dy);
 
+  const fR = compFactor(options.compensators?.r);
+  const fNir = compFactor(options.compensators?.nir);
+
   const out = document.createElement("canvas");
   out.width = w;
   out.height = h;
@@ -117,8 +135,8 @@ async function computeNdviFromImages(redImg, nirImg) {
 
   for (let i = 0; i < n; i++) {
     const o = i * 4;
-    const rVal = redLum[i];
-    const nVal = nirLum[i];
+    const rVal = redLum[i] * fR;
+    const nVal = nirLum[i] * fNir;
     let ndvi = (nVal - rVal) / (nVal + rVal + EPS);
     if (ndvi < -1) ndvi = -1;
     if (ndvi > 1) ndvi = 1;
@@ -161,25 +179,27 @@ async function computeNdviFromImages(redImg, nirImg) {
 /**
  * @param {File} redFile
  * @param {File} nirFile
+ * @param {{ compensators?: import("./cubeCompensators").CompensatorsByBand | null }} [options]
  * @returns {Promise<{ blob: Blob; stats: { mean: number; min: number; max: number }; width: number; height: number }>}
  */
-export async function computeNdviPngFromFiles(redFile, nirFile) {
+export async function computeNdviPngFromFiles(redFile, nirFile, options = {}) {
   const [redImg, nirImg] = await Promise.all([
     loadImageFromFile(redFile),
     loadImageFromFile(nirFile),
   ]);
-  return computeNdviFromImages(redImg, nirImg);
+  return computeNdviFromImages(redImg, nirImg, options);
 }
 
 /**
  * NDVI desde URLs de bandas (útil para recalcular al visualizar cubes ya guardados).
  * @param {string} redUrl
  * @param {string} nirUrl
+ * @param {{ compensators?: import("./cubeCompensators").CompensatorsByBand | null }} [options]
  */
-export async function computeNdviPngFromUrls(redUrl, nirUrl) {
+export async function computeNdviPngFromUrls(redUrl, nirUrl, options = {}) {
   const [redImg, nirImg] = await Promise.all([
     loadImageFromUrl(redUrl),
     loadImageFromUrl(nirUrl),
   ]);
-  return computeNdviFromImages(redImg, nirImg);
+  return computeNdviFromImages(redImg, nirImg, options);
 }

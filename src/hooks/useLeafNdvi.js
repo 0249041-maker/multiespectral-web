@@ -10,9 +10,17 @@ import { computeLeafNdvi } from "@/lib/leafNdvi";
  *   boxes: Array<{x1:number,y1:number,x2:number,y2:number}> | null,
  *   imageWidth?: number | null,
  *   imageHeight?: number | null,
+ *   compensators?: { r?: number, nir?: number } | null,
  * }} params
  */
-export function useLeafNdvi({ cubeId, bands, boxes, imageWidth, imageHeight }) {
+export function useLeafNdvi({
+  cubeId,
+  bands,
+  boxes,
+  imageWidth,
+  imageHeight,
+  compensators,
+}) {
   const [state, setState] = useState({
     loading: false,
     mean: null,
@@ -26,6 +34,8 @@ export function useLeafNdvi({ cubeId, bands, boxes, imageWidth, imageHeight }) {
   const boxesCount = Array.isArray(boxes) ? boxes.length : 0;
   const dimsKey =
     imageWidth && imageHeight ? `${imageWidth}x${imageHeight}` : "";
+  const compR = compensators?.r ?? null;
+  const compNir = compensators?.nir ?? null;
 
   useEffect(() => {
     if (!cubeId || !redUrl || !nirUrl) {
@@ -48,6 +58,7 @@ export function useLeafNdvi({ cubeId, bands, boxes, imageWidth, imageHeight }) {
       boxes,
       imageWidth: imageWidth || 0,
       imageHeight: imageHeight || 0,
+      compensators: compensators ?? null,
     })
       .then((res) => {
         if (cancelled) return;
@@ -73,7 +84,19 @@ export function useLeafNdvi({ cubeId, bands, boxes, imageWidth, imageHeight }) {
     return () => {
       cancelled = true;
     };
-  }, [cubeId, redUrl, nirUrl, boxesCount, dimsKey, boxes, imageWidth, imageHeight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    cubeId,
+    redUrl,
+    nirUrl,
+    boxesCount,
+    dimsKey,
+    boxes,
+    imageWidth,
+    imageHeight,
+    compR,
+    compNir,
+  ]);
 
   return state;
 }

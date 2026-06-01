@@ -41,20 +41,6 @@ export default function CameraDashboardLayout({ embedded = false, onBack }) {
         </header>
       )}
 
-      {embedded ? (
-        <div className="border-b border-slate-200 bg-white px-4 py-3 md:px-6">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Dispositivo
-          </p>
-          <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-            Cámara multiespectral
-          </h1>
-          <p className="mt-1 text-xs text-slate-500">
-            Raspberry Pi 5 · panel de instrumentación (interfaz simulada)
-          </p>
-        </div>
-      ) : null}
-
       <CameraWebSocketProvider wsUrl={CAMERA_LIVE_WS_URL} appendLog={dash.appendLog}>
         <CameraDashboardBody dash={dash} />
       </CameraWebSocketProvider>

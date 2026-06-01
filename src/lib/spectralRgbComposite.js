@@ -595,13 +595,40 @@ function assertSameDimensions(label, img, w, h) {
 }
 
 /**
+ * Factor por banda para convertir intensidad 0..1 en reflectancia compensada
+ * por el blanco. `factor = 255 / compensador` (con `compensador` en 0..255).
+ * Si no hay compensador válido devuelve 1 (sin compensación).
+ * @param {import("./cubeCompensators").CompensatorsByBand | null | undefined} comp
+ */
+function buildBandFactors(comp) {
+  const factor = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return 1;
+    const norm = n / 255;
+    return norm > 1e-3 ? 1 / norm : 1;
+  };
+  return {
+    r: factor(comp?.r),
+    g: factor(comp?.g),
+    b: factor(comp?.b),
+    re: factor(comp?.re),
+    nir: factor(comp?.nir),
+  };
+}
+
+/**
  * Reflectancia aproximada por canal (luminancia / 255), alineada a R.
  * Requiere las 5 URLs (R, G, B, RE, NIR).
  *
+ * Si se proveen `compensators` (intensidad media 0..255 del blanco por banda),
+ * la reflectancia se calcula como:
+ *   reflectancia = (luminancia / 255) / (compensador / 255)
+ *
  * @param {{ r: string; g: string; b: string; re: string; nir: string }} bandUrls
+ * @param {{ compensators?: import("./cubeCompensators").CompensatorsByBand | null }} [options]
  * @returns {Promise<{ w: number; h: number; R: Float32Array; G: Float32Array; B: Float32Array; RE: Float32Array; NIR: Float32Array }>}
  */
-export async function computeFiveBandAlignedReflectance(bandUrls) {
+export async function computeFiveBandAlignedReflectance(bandUrls, options = {}) {
   const { r, g, b, re, nir } = bandUrls;
   if (!r || !g || !b || !re || !nir) {
     throw new Error("Se requieren las cinco bandas (R, G, B, RE, NIR).");
@@ -637,6 +664,8 @@ export async function computeFiveBandAlignedReflectance(bandUrls) {
   const dataRe = applyShiftFloat32(dataRe0, w, h, shiftRe.dx, shiftRe.dy);
   const dataNir = applyShiftFloat32(dataNir0, w, h, shiftNir.dx, shiftNir.dy);
 
+  const f = buildBandFactors(options.compensators);
+
   const n = w * h;
   const R = new Float32Array(n);
   const G = new Float32Array(n);
@@ -644,22 +673,24 @@ export async function computeFiveBandAlignedReflectance(bandUrls) {
   const RE = new Float32Array(n);
   const NIR = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    R[i] = dataR[i] / 255;
-    G[i] = dataG[i] / 255;
-    B[i] = dataB[i] / 255;
-    RE[i] = dataRe[i] / 255;
-    NIR[i] = dataNir[i] / 255;
+    R[i] = (dataR[i] / 255) * f.r;
+    G[i] = (dataG[i] / 255) * f.g;
+    B[i] = (dataB[i] / 255) * f.b;
+    RE[i] = (dataRe[i] / 255) * f.re;
+    NIR[i] = (dataNir[i] / 255) * f.nir;
   }
   return { w, h, R, G, B, RE, NIR };
 }
 
 /**
  * R, G, B como reflectancia ~0..1 alineadas a la banda R.
+ * Si se proveen `compensators`, multiplica por el factor 255/compensador por banda.
  *
  * @param {{ r: string; g: string; b: string }} bandUrls
+ * @param {{ compensators?: import("./cubeCompensators").CompensatorsByBand | null }} [options]
  * @returns {Promise<{ w: number; h: number; R: Float32Array; G: Float32Array; B: Float32Array }>}
  */
-export async function computeThreeBandAlignedReflectance(bandUrls) {
+export async function computeThreeBandAlignedReflectance(bandUrls, options = {}) {
   const { r, g, b } = bandUrls;
   if (!r || !g || !b) {
     throw new Error("Se requieren las bandas R, G y B.");
@@ -684,14 +715,16 @@ export async function computeThreeBandAlignedReflectance(bandUrls) {
   const dataG = applyShiftFloat32(dataG0, w, h, shiftG.dx, shiftG.dy);
   const dataB = applyShiftFloat32(dataB0, w, h, shiftB.dx, shiftB.dy);
 
+  const f = buildBandFactors(options.compensators);
+
   const n = w * h;
   const R = new Float32Array(n);
   const G = new Float32Array(n);
   const B = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    R[i] = dataR[i] / 255;
-    G[i] = dataG[i] / 255;
-    B[i] = dataB[i] / 255;
+    R[i] = (dataR[i] / 255) * f.r;
+    G[i] = (dataG[i] / 255) * f.g;
+    B[i] = (dataB[i] / 255) * f.b;
   }
   return { w, h, R, G, B };
 }

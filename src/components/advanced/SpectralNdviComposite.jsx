@@ -5,10 +5,13 @@ import { useEffect, useState } from "react";
  * NDVI recalculado al vuelo desde R y NIR (con alineación automática).
  * Esto evita depender de un NDVI histórico guardado con desalineación.
  */
-export default function SpectralNdviComposite({ bands, className }) {
+export default function SpectralNdviComposite({ bands, className, compensators }) {
   const [resolved, setResolved] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState(null);
+
+  const compR = compensators?.r ?? null;
+  const compNir = compensators?.nir ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -19,7 +22,9 @@ export default function SpectralNdviComposite({ bands, className }) {
 
     (async () => {
       try {
-        const { blob } = await computeNdviPngFromUrls(bands.r, bands.nir);
+        const { blob } = await computeNdviPngFromUrls(bands.r, bands.nir, {
+          compensators: compensators ?? null,
+        });
         if (cancelled) return;
         blobUrl = URL.createObjectURL(blob);
         if (cancelled) {
@@ -45,7 +50,9 @@ export default function SpectralNdviComposite({ bands, className }) {
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [bands.r, bands.nir]);
+    // Solo cambiamos al cambiar URLs o factor de compensación de R/NIR.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bands.r, bands.nir, compR, compNir]);
 
   if (busy) {
     return (

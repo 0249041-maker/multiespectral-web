@@ -137,14 +137,38 @@ async function valuesToPngBlob(values, w, h, colorize) {
 }
 
 /**
+ * Factor de compensación 0..255 → 1/(c/255). Si no es válido, devuelve 1.
+ * @param {number | null | undefined} comp
+ */
+function compFactor(comp) {
+  const n = Number(comp);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  const norm = n / 255;
+  return norm > 1e-3 ? 1 / norm : 1;
+}
+
+/**
  * @param {Record<string, string | undefined>} bands
  * @param {"GNDVI" | "CI_re" | "SIPI" | "VARI"} visualization
+ * @param {{ compensators?: import("./cubeCompensators").CompensatorsByBand | null }} [options]
  * @returns {Promise<{ blob: Blob; stats: { mean: number; min: number; max: number }; width: number; height: number }>}
  */
-export async function computeSpectralIndexPngFromBands(bands, visualization) {
+export async function computeSpectralIndexPngFromBands(
+  bands,
+  visualization,
+  options = {}
+) {
   const fullFive = Boolean(
     bands?.r && bands?.g && bands?.b && bands?.re && bands?.nir
   );
+  const compensators = options.compensators ?? null;
+  const factors = {
+    r: compFactor(compensators?.r),
+    g: compFactor(compensators?.g),
+    b: compFactor(compensators?.b),
+    re: compFactor(compensators?.re),
+    nir: compFactor(compensators?.nir),
+  };
 
   let w;
   let h;
@@ -159,11 +183,10 @@ export async function computeSpectralIndexPngFromBands(bands, visualization) {
         "VARI = (G−R)/(G+R−B): necesitas las bandas R, G y B (no requiere NIR)."
       );
     }
-    const o = await computeThreeBandAlignedReflectance({
-      r: bands.r,
-      g: bands.g,
-      b: bands.b,
-    });
+    const o = await computeThreeBandAlignedReflectance(
+      { r: bands.r, g: bands.g, b: bands.b },
+      { compensators }
+    );
     w = o.w;
     h = o.h;
     const n = w * h;
@@ -187,7 +210,8 @@ export async function computeSpectralIndexPngFromBands(bands, visualization) {
       const o = await computeFiveBandAlignedReflectance(
         /** @type {{ r: string; g: string; b: string; re: string; nir: string }} */ (
           bands
-        )
+        ),
+        { compensators }
       );
       w = o.w;
       h = o.h;
@@ -219,8 +243,8 @@ export async function computeSpectralIndexPngFromBands(bands, visualization) {
       const n = w * h;
       values = new Float32Array(n);
       for (let i = 0; i < n; i++) {
-        const Gch = lumG[i] / 255;
-        const N = lumN[i] / 255;
+        const Gch = (lumG[i] / 255) * factors.g;
+        const N = (lumN[i] / 255) * factors.nir;
         let v = (N - Gch) / (N + Gch + EPS);
         if (v < -1) v = -1;
         if (v > 1) v = 1;
@@ -236,7 +260,8 @@ export async function computeSpectralIndexPngFromBands(bands, visualization) {
       const o = await computeFiveBandAlignedReflectance(
         /** @type {{ r: string; g: string; b: string; re: string; nir: string }} */ (
           bands
-        )
+        ),
+        { compensators }
       );
       w = o.w;
       h = o.h;
@@ -264,8 +289,8 @@ export async function computeSpectralIndexPngFromBands(bands, visualization) {
       const n = w * h;
       values = new Float32Array(n);
       for (let i = 0; i < n; i++) {
-        const re = Math.max(lumRe[i] / 255, EPS);
-        const N = lumN[i] / 255;
+        const re = Math.max((lumRe[i] / 255) * factors.re, EPS);
+        const N = (lumN[i] / 255) * factors.nir;
         values[i] = N / re - 1;
       }
     } else {
@@ -278,7 +303,8 @@ export async function computeSpectralIndexPngFromBands(bands, visualization) {
       const o = await computeFiveBandAlignedReflectance(
         /** @type {{ r: string; g: string; b: string; re: string; nir: string }} */ (
           bands
-        )
+        ),
+        { compensators }
       );
       w = o.w;
       h = o.h;
@@ -321,9 +347,9 @@ export async function computeSpectralIndexPngFromBands(bands, visualization) {
       const n = w * h;
       values = new Float32Array(n);
       for (let i = 0; i < n; i++) {
-        const R = lumR[i] / 255;
-        const Bch = lumB[i] / 255;
-        const N = lumN[i] / 255;
+        const R = (lumR[i] / 255) * factors.r;
+        const Bch = (lumB[i] / 255) * factors.b;
+        const N = (lumN[i] / 255) * factors.nir;
         const den = N - R;
         if (Math.abs(den) < minDenomMagnitude(N + R)) {
           values[i] = NaN;

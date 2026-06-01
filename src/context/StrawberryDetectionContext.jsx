@@ -15,6 +15,8 @@ export function StrawberryDetectionProvider({ children }) {
   const [lastRunAt, setLastRunAt] = useState(null);
   /** URLs del cube seleccionado (modo avanzado) para índices por bbox. */
   const [spectralCubeBands, setSpectralCubeBands] = useState(null);
+  /** Compensadores blancos por banda del cube seleccionado (0..255). */
+  const [spectralCubeCompensators, setSpectralCubeCompensators] = useState(null);
   /** Cube activo en modo avanzado (para enlazar métricas del dashboard). */
   const [spectralCubeSelection, setSpectralCubeSelection] = useState({
     id: null,
@@ -84,6 +86,8 @@ export function StrawberryDetectionProvider({ children }) {
       setDetectionResult,
       spectralCubeBands,
       setSpectralCubeBands,
+      spectralCubeCompensators,
+      setSpectralCubeCompensators,
       spectralCubeSelection,
       setSpectralCubeSelection,
       selectedCubeNdviStats,
@@ -103,6 +107,8 @@ export function StrawberryDetectionProvider({ children }) {
       setDetectionResult,
       spectralCubeBands,
       setSpectralCubeBands,
+      spectralCubeCompensators,
+      setSpectralCubeCompensators,
       spectralCubeSelection,
       setSpectralCubeSelection,
       selectedCubeNdviStats,

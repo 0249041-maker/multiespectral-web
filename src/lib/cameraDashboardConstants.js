@@ -26,45 +26,43 @@ export const CAMERA_WORKFLOW_STEP_IDS = {
 export const CAMERA_WORKFLOW_STEPS = [
   {
     id: CAMERA_WORKFLOW_STEP_IDS.CONFIG,
-    label: "Config",
-    items: [{ sectionId: CAMERA_SECTION_IDS.CONFIG, short: "Config" }],
+    label: "Configuración",
+    items: [{ sectionId: CAMERA_SECTION_IDS.CONFIG, short: "Configuración" }],
   },
   {
     id: CAMERA_WORKFLOW_STEP_IDS.CAL_FILTERS,
-    label: "Cal filtros",
-    items: [{ sectionId: CAMERA_SECTION_IDS.CAL_FILTERS, short: "Cal · filtros" }],
+    label: "Calibración filtros",
+    items: [
+      { sectionId: CAMERA_SECTION_IDS.CAL_FILTERS, short: "Calibración filtros" },
+    ],
   },
   {
     id: CAMERA_WORKFLOW_STEP_IDS.CAL_FOCUS,
-    label: "Cal foco",
+    label: "Calibración óptica",
     items: [
-      { sectionId: CAMERA_SECTION_IDS.CAL_FOCUS_APERTURE, short: "Cal · foco/diaf." },
+      {
+        sectionId: CAMERA_SECTION_IDS.CAL_FOCUS_APERTURE,
+        short: "Calibración óptica",
+      },
     ],
   },
   {
     id: CAMERA_WORKFLOW_STEP_IDS.CAL_WHITE,
-    label: "Cal blanco",
-    items: [{ sectionId: CAMERA_SECTION_IDS.CAL_WHITE, short: "Cal · blanco" }],
+    label: "Calibración blancos",
+    items: [
+      { sectionId: CAMERA_SECTION_IDS.CAL_WHITE, short: "Calibración blancos" },
+    ],
   },
   {
     id: CAMERA_WORKFLOW_STEP_IDS.CAPTURE,
-    label: "Captura",
+    label: "Captura de cubo",
     items: [
-      { sectionId: CAMERA_SECTION_IDS.CAPTURE_SINGLE, short: "1× cubo" },
-      { sectionId: CAMERA_SECTION_IDS.CAPTURE_CONTINUOUS, short: "Secuencia" },
+      { sectionId: CAMERA_SECTION_IDS.CAPTURE_SINGLE, short: "Captura de cubo" },
     ],
   },
 ];
 
-export const CAMERA_NAV_GROUPS = [
-  {
-    label: "Sistema",
-    items: [
-      { id: CAMERA_SECTION_IDS.LEDS, label: "LEDs", short: "NeoPixel" },
-      { id: CAMERA_SECTION_IDS.LOGS, label: "Consola", short: "Logs" },
-    ],
-  },
-];
+export const CAMERA_NAV_GROUPS = [];
 
 /** Estados globales mock para badges del header. */
 export const GLOBAL_STATUS_KEYS = [

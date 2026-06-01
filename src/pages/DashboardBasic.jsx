@@ -105,6 +105,7 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
     lastRunAt,
     spectralCubeSelection,
     spectralCubeBands,
+    spectralCubeCompensators,
     lastDetectionCubeId,
     lastDetectionImageSize,
   } = useStrawberryDetection();
@@ -161,6 +162,7 @@ export default function DashboardBasic({ onToggleAdvanced, advancedVisible }) {
     boxes: fruitBoxes,
     imageWidth: lastDetectionImageSize?.width ?? null,
     imageHeight: lastDetectionImageSize?.height ?? null,
+    compensators: spectralCubeCompensators,
   });
 
   const leafNdviMean = leaf.mean;

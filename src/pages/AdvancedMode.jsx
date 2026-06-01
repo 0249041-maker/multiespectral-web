@@ -3,7 +3,13 @@ import SpectralComputedIndex from "@/components/advanced/SpectralComputedIndex";
 import SpectralNdviComposite from "@/components/advanced/SpectralNdviComposite";
 import SpectralRgbComposite from "@/components/advanced/SpectralRgbComposite";
 import SupabaseImage from "@/components/advanced/SupabaseImage";
+import { useCameraDashboard } from "@/context/CameraDashboardContext";
 import { useStrawberryDetection } from "@/context/StrawberryDetectionContext";
+import {
+  extractCompensatorsFromMetadata,
+  fetchCubeMetadata,
+  normalizeCompensators,
+} from "@/lib/cubeCompensators";
 import { supabase } from "@/lib/supabase";
 import {
   DEFAULT_MATURITY_THRESHOLDS,
@@ -11,7 +17,7 @@ import {
   setMaturityThresholds,
 } from "@/lib/strawberryMaturity";
 import { useSpectralCubes } from "@/state/useSpectralCubes";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 const StrawberryDetectionLab = lazy(() =>
   import("@/components/StrawberryDetectionLab.jsx")
@@ -82,7 +88,7 @@ function isBandVisualization(v) {
   return Boolean(BAND_BY_VIZ[v]);
 }
 
-function SpectralImagePreview({ visualization, bands, empty, onComputedStats }) {
+function SpectralImagePreview({ visualization, bands, empty, onComputedStats, compensators }) {
   if (empty || !bands) {
     if (empty) {
       return (
@@ -101,6 +107,7 @@ function SpectralImagePreview({ visualization, bands, empty, onComputedStats }) 
       <div className="flex max-w-full flex-col items-center gap-3 sm:flex-row sm:items-stretch sm:justify-center sm:gap-4">
         <SpectralNdviComposite
           bands={bands}
+          compensators={compensators}
           className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
         />
       </div>
@@ -167,6 +174,7 @@ function SpectralImagePreview({ visualization, bands, empty, onComputedStats }) 
       <SpectralComputedIndex
         visualization={visualization}
         bands={bands}
+        compensators={compensators}
         onStats={onComputedStats}
         className="max-h-[min(70vh,32rem)] max-w-full rounded-lg object-contain shadow-lg"
       />
@@ -244,14 +252,145 @@ function IndexLegend({ visualization }) {
   );
 }
 
-function CubeMetadataPanel({ cube, onSaveName, onClose }) {
+const COMP_NM_BY_KEY = { b: 450, g: 550, r: 656, re: 725, nir: 850 };
+const COMP_ROWS_ORDER = ["b", "g", "r", "re", "nir"];
+
+function CompensatorsTable({ compensators, source }) {
+  const hasAny = compensators
+    ? COMP_ROWS_ORDER.some((k) => Number.isFinite(Number(compensators[k])))
+    : false;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+          Compensadores blancos
+        </p>
+        <span className="text-[10px] text-slate-500">origen: {source}</span>
+      </div>
+      {hasAny ? (
+        <div className="overflow-hidden rounded border border-slate-200">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-100 text-[10px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-2 py-1.5 font-semibold">nm</th>
+                <th className="px-2 py-1.5 font-semibold">Banda</th>
+                <th className="px-2 py-1.5 font-semibold">Valor (0–255)</th>
+                <th className="px-2 py-1.5 font-semibold">Factor (255 / val)</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {COMP_ROWS_ORDER.map((k) => {
+                const v = Number(compensators?.[k]);
+                const valid = Number.isFinite(v) && v > 0;
+                return (
+                  <tr key={k} className="border-t border-slate-100">
+                    <td className="px-2 py-1.5 font-mono text-slate-700">
+                      {COMP_NM_BY_KEY[k]}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono uppercase text-slate-700">
+                      {k}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-slate-800">
+                      {valid ? v.toFixed(0) : "—"}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-slate-600">
+                      {valid ? (255 / v).toFixed(3) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-[11px] text-slate-500">
+          Sin compensadores disponibles. Los índices se calculan sin
+          compensación (factor 1).
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FullMetadataBlock({ json }) {
+  if (json == null) return null;
+  let pretty = "";
+  try {
+    pretty = JSON.stringify(json, null, 2);
+  } catch {
+    pretty = String(json);
+  }
+  return (
+    <details className="rounded-lg border border-slate-200 bg-slate-50/60">
+      <summary className="cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 hover:bg-slate-100">
+        metadata.json (completo)
+      </summary>
+      <pre className="max-h-72 overflow-auto rounded-b-lg bg-slate-900 px-3 py-2 text-[11px] leading-relaxed text-slate-100">
+        {pretty}
+      </pre>
+    </details>
+  );
+}
+
+function CubeMetadataPanel({ cube, onSaveName, onClose, activeCompensators }) {
   const [name, setName] = useState(cube?.label ?? "");
+  const [rawMetadata, setRawMetadata] = useState(null);
+  const [metadataLoading, setMetadataLoading] = useState(false);
+  const [metadataError, setMetadataError] = useState(null);
 
   useEffect(() => {
     setName(cube?.label ?? "");
   }, [cube?.id, cube?.label]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setRawMetadata(null);
+    setMetadataError(null);
+
+    if (!cube?.metadataUrl) {
+      setMetadataLoading(false);
+      return undefined;
+    }
+
+    setMetadataLoading(true);
+    fetchCubeMetadata(cube.metadataUrl)
+      .then((json) => {
+        if (cancelled) return;
+        if (json == null) {
+          setMetadataError(
+            "No se pudo leer metadata.json (no existe o el navegador no pudo descargarlo)."
+          );
+        } else {
+          setRawMetadata(json);
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setMetadataError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setMetadataLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cube?.id, cube?.metadataUrl]);
+
   if (!cube) return null;
+
+  const compFromMetadata = rawMetadata
+    ? extractCompensatorsFromMetadata(rawMetadata)
+    : null;
+  const compFromCube = cube.compensators ?? null;
+  const comp = compFromMetadata ?? compFromCube ?? activeCompensators ?? null;
+  const compSource = compFromMetadata
+    ? "metadata.json del cube"
+    : compFromCube
+      ? "cube (cache de metadata)"
+      : activeCompensators
+        ? "calibración blanca activa"
+        : "sin compensación (factor 1)";
 
   const handleSave = () => {
     const next = name.trim();
@@ -264,7 +403,7 @@ function CubeMetadataPanel({ cube, onSaveName, onClose }) {
   };
 
   return (
-    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left text-sm text-slate-800 shadow-sm">
+    <div className="flex max-w-3xl flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left text-sm text-slate-800 shadow-sm">
       <div className="flex items-center justify-between">
         <p className="text-base font-semibold text-slate-900">
           Metadata del cube
@@ -296,6 +435,8 @@ function CubeMetadataPanel({ cube, onSaveName, onClose }) {
           Guardar nombre
         </button>
       </label>
+
+      <CompensatorsTable compensators={comp} source={compSource} />
 
       <dl className="grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
         <div>
@@ -353,7 +494,31 @@ function CubeMetadataPanel({ cube, onSaveName, onClose }) {
             </dd>
           </div>
         ) : null}
+        {cube.metadataUrl ? (
+          <div className="sm:col-span-2">
+            <dt className="text-[11px] uppercase tracking-wide text-slate-500">
+              URL del metadata.json
+            </dt>
+            <dd className="break-all font-mono text-[11px] text-sky-700">
+              <a href={cube.metadataUrl} target="_blank" rel="noreferrer">
+                {cube.metadataUrl}
+              </a>
+            </dd>
+          </div>
+        ) : null}
       </dl>
+
+      {metadataLoading ? (
+        <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+          Cargando metadata.json…
+        </p>
+      ) : metadataError ? (
+        <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          {metadataError}
+        </p>
+      ) : rawMetadata ? (
+        <FullMetadataBlock json={rawMetadata} />
+      ) : null}
     </div>
   );
 }
@@ -409,9 +574,15 @@ function MaturityThresholdsDetails({
 export default function AdvancedMode({ uiVisible = true } = {}) {
   const {
     setSpectralCubeBands,
+    setSpectralCubeCompensators,
     setSpectralCubeSelection,
     setSelectedCubeNdviStats,
   } = useStrawberryDetection();
+  const dash = useCameraDashboard();
+  const activeCompensators = useMemo(
+    () => normalizeCompensators(dash?.activeWhiteReference?.compensators),
+    [dash?.activeWhiteReference?.compensators]
+  );
   const [computedIndexStats, setComputedIndexStats] = useState(null);
   const [maturityUi, setMaturityUi] = useState(() => getMaturityThresholds());
   const [showCubeMetadata, setShowCubeMetadata] = useState(false);
@@ -512,6 +683,16 @@ export default function AdvancedMode({ uiVisible = true } = {}) {
     }
     return () => setSpectralCubeBands(null);
   }, [selectedCube?.bands, selectedCube?.id, setSpectralCubeBands]);
+
+  const effectiveCompensators = useMemo(
+    () => selectedCube?.compensators ?? activeCompensators ?? null,
+    [selectedCube?.compensators, activeCompensators]
+  );
+
+  useEffect(() => {
+    setSpectralCubeCompensators(effectiveCompensators);
+    return () => setSpectralCubeCompensators(null);
+  }, [effectiveCompensators, setSpectralCubeCompensators]);
 
   const statsCube = selectedCube ?? cubes[0];
 
@@ -652,6 +833,7 @@ export default function AdvancedMode({ uiVisible = true } = {}) {
                   {showCubeMetadata && selectedCube ? (
                     <CubeMetadataPanel
                       cube={selectedCube}
+                      activeCompensators={activeCompensators}
                       onSaveName={renameCube}
                       onClose={() => setShowCubeMetadata(false)}
                     />
@@ -659,6 +841,9 @@ export default function AdvancedMode({ uiVisible = true } = {}) {
                     <SpectralImagePreview
                       visualization={selectedVisualization}
                       bands={statsCube?.bands ?? null}
+                      compensators={
+                        statsCube?.compensators ?? activeCompensators ?? null
+                      }
                       empty={cubes.length === 0}
                       onComputedStats={setComputedIndexStats}
                     />

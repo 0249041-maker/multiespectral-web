@@ -16,7 +16,7 @@ export default function CameraDashboardBody({ dash }) {
 
   return (
     <>
-      <CameraInstrumentHeader dash={dash} shutdown={shutdown} />
+      <CameraInstrumentHeader shutdown={shutdown} />
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <CameraSidebar

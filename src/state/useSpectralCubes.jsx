@@ -16,6 +16,7 @@ import {
 } from "@/lib/spectralStorage";
 import { listSpectralCubesFromStorage } from "@/lib/spectralCubesStorage";
 import { compensateBandsWithWhiteReference } from "@/lib/whiteReferenceCompensation";
+import { fetchCubeCompensators } from "@/lib/cubeCompensators";
 import {
   normalizeSupabaseStorageImageUrl,
   signedUrlFromPublicStorageUrl,
@@ -139,6 +140,20 @@ async function loadMergedCubes() {
   const localOnly = local.filter((c) => !remoteIds.has(c.id));
   const merged = [...remote, ...localOnly];
 
+  // Carga compensadores en paralelo desde metadata.json (si existe). Si no hay
+  // metadata, `compensators` queda como `null` y el resto del código aplica
+  // factor 1 (sin compensación).
+  await Promise.all(
+    merged.map(async (cube) => {
+      if (!cube || cube.compensators !== undefined) return;
+      try {
+        cube.compensators = await fetchCubeCompensators(cube.metadataUrl);
+      } catch {
+        cube.compensators = null;
+      }
+    })
+  );
+
   const supabaseError =
     errors.length > 0 && merged.length === 0
       ? errors.join(" · ")
@@ -254,6 +269,17 @@ export function useSpectralCubes() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Al elegir un cubo distinto al actual, regresa la visualización a "RGB
+  // natural" (requerido por UX: cada cubo arranca mostrando su RGB).
+  const selectCubeId = useCallback((id) => {
+    setSelectedCubeId((prev) => {
+      if (prev !== id) {
+        setSelectedVisualization("RGB natural");
+      }
+      return id;
+    });
   }, []);
 
   const renameCube = useCallback((id, newLabel) => {
@@ -546,7 +572,7 @@ export function useSpectralCubes() {
     cubes,
     selectedCube,
     selectedCubeId,
-    setSelectedCubeId,
+    setSelectedCubeId: selectCubeId,
     selectedVisualization,
     setSelectedVisualization,
     loading,

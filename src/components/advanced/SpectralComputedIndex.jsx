@@ -16,11 +16,16 @@ export default function SpectralComputedIndex({
   bands,
   className,
   onStats,
+  compensators,
 }) {
   const [src, setSrc] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState(null);
   const [rangeHint, setRangeHint] = useState("");
+
+  const compKey = compensators
+    ? `${compensators.r ?? ""}|${compensators.g ?? ""}|${compensators.b ?? ""}|${compensators.re ?? ""}|${compensators.nir ?? ""}`
+    : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +39,8 @@ export default function SpectralComputedIndex({
       try {
         const { blob, stats } = await computeSpectralIndexPngFromBands(
           bands,
-          visualization
+          visualization,
+          { compensators: compensators ?? null }
         );
         if (cancelled) return;
         blobUrl = URL.createObjectURL(blob);
@@ -73,6 +79,7 @@ export default function SpectralComputedIndex({
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     visualization,
     bands?.r,
@@ -81,6 +88,7 @@ export default function SpectralComputedIndex({
     bands?.re,
     bands?.nir,
     onStats,
+    compKey,
   ]);
 
   if (busy) {

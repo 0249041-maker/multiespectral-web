@@ -12,7 +12,7 @@ import {
 } from "@/lib/cameraDashboardConstants";
 import { useFilterCalibration } from "@/hooks/useFilterCalibration";
 import { useCubeCaptureMode } from "@/hooks/useCubeCaptureMode";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 function Card({ title, subtitle, children, className = "" }) {
   return (
@@ -214,6 +214,29 @@ function PanelConfig({ dash }) {
           + Agregar red
         </button>
       )}
+
+      <div className="mt-6 border-t border-slate-200 pt-4">
+        <header className="mb-3">
+          <h3 className="text-base font-semibold text-slate-900">Consola</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Misma fuente de logs del sistema + scroll.
+          </p>
+        </header>
+        <CameraLogConsole
+          ref={dash.logScrollRef}
+          lines={dash.logs}
+          className="min-h-[280px]"
+        />
+        <button
+          type="button"
+          className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 font-mono text-xs text-slate-600 hover:bg-slate-100"
+          onClick={() =>
+            appendLog("[INFO] Entrada manual de prueba desde panel de configuración.")
+          }
+        >
+          Añadir log de prueba
+        </button>
+      </div>
     </Card>
   );
 }
@@ -241,34 +264,7 @@ function PanelCalFilters({ dash }) {
           : "text-slate-600";
 
   return (
-    <Card
-      title="Calibración de filtros"
-      subtitle="Comando WebSocket calibrate_filters · solo mensajes JSON."
-    >
-      <p className="mb-3 font-mono text-xs text-slate-500">
-        WebSocket:{" "}
-        <code className="rounded bg-slate-100 px-1 text-emerald-800">{cal.wsUrl}</code>
-        <span className="ml-2">
-          ·{" "}
-          <span className={cal.connected ? "text-emerald-600" : "text-amber-600"}>
-            {cal.connected ? "conectado" : "desconectado"}
-          </span>
-        </span>
-      </p>
-
-      {cal.connectionError ? (
-        <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {cal.connectionError}
-          <button
-            type="button"
-            onClick={cal.reconnect}
-            className="ml-2 underline hover:no-underline"
-          >
-            Reintentar
-          </button>
-        </p>
-      ) : null}
-
+    <Card title="Calibración de filtros">
       {cal.cameraInfo ? (
         <dl className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs sm:grid-cols-3">
           <div>
@@ -290,28 +286,38 @@ function PanelCalFilters({ dash }) {
         </dl>
       ) : null}
 
-      <button
-        type="button"
-        disabled={cal.buttonDisabled}
-        onClick={() => {
-          dash.startCalibrationLed(
-            CALIBRATION_LED.FILTERS.pattern,
-            CALIBRATION_LED.FILTERS.color
-          );
-          cal.startCalibration();
-        }}
-        className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 font-semibold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] transition hover:brightness-110 disabled:opacity-50"
-      >
-        {cal.isCalibrating ? "Calibrando…" : "Iniciar calibración"}
-      </button>
+      <div className="flex flex-col items-start gap-1.5">
+        <button
+          type="button"
+          disabled={cal.buttonDisabled || !cal.connected}
+          onClick={() => {
+            dash.startCalibrationLed(
+              CALIBRATION_LED.FILTERS.pattern,
+              CALIBRATION_LED.FILTERS.color
+            );
+            cal.startCalibration();
+          }}
+          className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 font-semibold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {cal.isCalibrating ? "Calibrando…" : "Iniciar calibración"}
+        </button>
+        {!cal.connected ? (
+          <div className="flex items-center gap-2 pl-1 text-[11px]">
+            <span className="font-medium text-red-700">Cámara sin conexión</span>
+            <button
+              type="button"
+              onClick={cal.reconnect}
+              className="font-semibold text-red-700 underline underline-offset-2 hover:no-underline"
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       {cal.statusText ? (
         <p className={`mt-4 text-sm font-medium ${statusTone}`}>{cal.statusText}</p>
-      ) : (
-        <p className="mt-4 text-sm text-slate-500">
-          Pulsa el botón para enviar el comando de calibración del cubo de filtros.
-        </p>
-      )}
+      ) : null}
 
       {cal.isCalibrating ? (
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
@@ -348,11 +354,6 @@ function PanelCalFocusAperture({ dash }) {
     onExposureChange: (ms) => dash.setOpticalExposureMs(ms),
   });
 
-  const bars = useMemo(
-    () => Array.from({ length: 24 }, () => 20 + Math.random() * 75),
-    [optical.activeFilter?.nm]
-  );
-
   const statusTone =
     optical.statusText && optical.statusText.toLowerCase().includes("error")
       ? "text-red-700"
@@ -362,34 +363,7 @@ function PanelCalFocusAperture({ dash }) {
 
   return (
     <div className="space-y-4">
-      <Card
-        title="Calibración de enfoque y diafragma"
-        subtitle="Calibración óptica por WebSocket: vista en vivo JPEG + comandos JSON."
-      >
-        <p className="mb-3 font-mono text-xs text-slate-500">
-          WebSocket:{" "}
-          <code className="rounded bg-slate-100 px-1 text-emerald-800">{optical.wsUrl}</code>
-          <span className="ml-2">
-            ·{" "}
-            <span className={optical.connected ? "text-emerald-600" : "text-amber-600"}>
-              {optical.connected ? "conectado" : "desconectado"}
-            </span>
-          </span>
-        </p>
-
-        {optical.connectionError ? (
-          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {optical.connectionError}
-            <button
-              type="button"
-              onClick={optical.reconnect}
-              className="ml-2 underline hover:no-underline"
-            >
-              Reintentar
-            </button>
-          </p>
-        ) : null}
-
+      <Card title="Calibración de enfoque y diafragma">
         {optical.cameraInfo ? (
           <dl className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs sm:grid-cols-4">
             <div>
@@ -415,18 +389,34 @@ function PanelCalFocusAperture({ dash }) {
           </dl>
         ) : null}
 
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          {!optical.sessionActive ? (
+        {!optical.sessionActive ? (
+          <div className="mb-4 flex flex-col items-start gap-1.5">
             <button
               type="button"
-              disabled={optical.controlsDisabled}
+              disabled={optical.controlsDisabled || !optical.connected}
               onClick={optical.startOpticalCalibration}
-              className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+              className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Iniciar calibración
             </button>
-          ) : null}
+            {!optical.connected ? (
+              <div className="flex items-center gap-2 pl-1 text-[11px]">
+                <span className="font-medium text-red-700">
+                  Cámara sin conexión
+                </span>
+                <button
+                  type="button"
+                  onClick={optical.reconnect}
+                  className="font-semibold text-red-700 underline underline-offset-2 hover:no-underline"
+                >
+                  Reintentar
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
+        <div className="mb-4 flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="font-mono text-[11px] uppercase text-slate-500">
               Exposición (ms)
@@ -489,57 +479,18 @@ function PanelCalFocusAperture({ dash }) {
           <p className={`mb-4 text-sm font-medium ${statusTone}`}>{optical.statusText}</p>
         ) : null}
 
-        <div className="grid gap-4 xl:grid-cols-3">
-          <div className="xl:col-span-2">
-            <OpticalLiveView
-              frameUrl={optical.frameUrl}
-              livePaused={optical.livePaused}
-              switchingFilter={optical.switchingFilter}
-              blanked={optical.liveViewBlanked}
-              waiting={optical.sessionActive && !optical.frameUrl && !optical.liveViewBlanked}
-              placeholder={
-                optical.sessionActive
-                  ? "Esperando fotogramas de la cámara…"
-                  : "Inicia la calibración óptica para ver la vista en vivo."
-              }
-            />
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
-              Histograma · {optical.activeFilter.label}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Referencia visual mientras calibras (mock hasta telemetría real).
-            </p>
-            <div className="mt-3 flex h-40 items-end gap-0.5">
-              {bars.map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-t bg-gradient-to-t from-slate-300 to-emerald-500/80"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
-            <dl className="mt-4 space-y-2 font-mono text-xs text-slate-600">
-              <div className="flex justify-between">
-                <dt>Exposición</dt>
-                <dd className="text-emerald-700">{optical.exposureMs} ms</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt>Sesión óptica</dt>
-                <dd className={optical.sessionActive ? "text-emerald-700" : "text-slate-500"}>
-                  {optical.sessionActive ? "activa" : "inactiva"}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt>Vista en vivo</dt>
-                <dd className={optical.liveViewReady ? "text-emerald-700" : "text-slate-500"}>
-                  {optical.liveViewReady ? "recibiendo" : "—"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
+        <OpticalLiveView
+          frameUrl={optical.frameUrl}
+          livePaused={optical.livePaused}
+          switchingFilter={optical.switchingFilter}
+          blanked={optical.liveViewBlanked}
+          waiting={optical.sessionActive && !optical.frameUrl && !optical.liveViewBlanked}
+          placeholder={
+            optical.sessionActive
+              ? "Esperando fotogramas de la cámara…"
+              : "Inicia la calibración óptica para ver la vista en vivo."
+          }
+        />
       </Card>
     </div>
   );
@@ -583,36 +534,24 @@ function PanelCaptureSingle({ dash }) {
     capture.captureCube(name);
   }, [capture, name, dash]);
 
+  // Al entrar al apartado, si la cámara está online y el modo captura ya está
+  // activo, posiciona automáticamente el filtro de 450 nm (una sola vez por
+  // entrada). Si el usuario cambia el filtro después, no se vuelve a forzar.
+  const autoFilterDoneRef = useRef(false);
+  useEffect(() => {
+    if (autoFilterDoneRef.current) return;
+    if (!capture.connected || !capture.modeActive || capture.controlsDisabled) {
+      return;
+    }
+    const filter450 = WAVELENGTH_FILTERS.find((w) => w.nm === 450);
+    if (!filter450) return;
+    autoFilterDoneRef.current = true;
+    capture.moveFilter(filter450.id);
+  }, [capture.connected, capture.modeActive, capture.controlsDisabled, capture]);
+
   return (
     <div className="space-y-4 pb-24">
-      <Card
-        title="Captura de cubo (1×)"
-        subtitle="WebSocket · start_cube_capture_mode al entrar · finish_cube_capture_mode al salir."
-      >
-        <p className="mb-3 font-mono text-xs text-slate-500">
-          WebSocket:{" "}
-          <code className="rounded bg-slate-100 px-1 text-emerald-800">{capture.wsUrl}</code>
-          <span className="ml-2">
-            ·{" "}
-            <span className={capture.connected ? "text-emerald-600" : "text-amber-600"}>
-              {capture.connected ? "conectado" : "desconectado"}
-            </span>
-          </span>
-        </p>
-
-        {capture.connectionError ? (
-          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {capture.connectionError}
-            <button
-              type="button"
-              onClick={capture.reconnect}
-              className="ml-2 font-semibold underline"
-            >
-              Reintentar conexión
-            </button>
-          </p>
-        ) : null}
-
+      <Card title="Captura de cubo">
         {capture.startFailed && capture.startError ? (
           <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             No se pudo activar el modo captura: <strong>{capture.startError}</strong>
@@ -624,13 +563,6 @@ function PanelCaptureSingle({ dash }) {
             >
               Reintentar modo captura
             </button>
-          </p>
-        ) : null}
-
-        {!dash.activeWhiteReference?.compensators ? (
-          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Completa la <strong>calibración de blancos</strong> antes de capturar. El payload solo
-            incluye compensadores numéricos (bandas 450–850, 725 nm).
           </p>
         ) : null}
 
@@ -656,18 +588,6 @@ function PanelCaptureSingle({ dash }) {
           >
             Aplicar exposición
           </button>
-          <span className="font-mono text-xs text-slate-500">
-            Modo:{" "}
-            <span className={capture.modeActive ? "text-emerald-700" : "text-amber-700"}>
-              {capture.modeActive
-                ? capture.cameraInfo?.state ?? "cube_capture_mode"
-                : capture.startFailed
-                  ? "error al iniciar"
-                  : capture.isStarting
-                    ? "iniciando…"
-                    : "inactivo"}
-            </span>
-          </span>
           {capture.modeActive ? (
             <button
               type="button"
@@ -723,7 +643,7 @@ function PanelCaptureSingle({ dash }) {
         />
       </Card>
 
-      <Card title="Parámetros de este cubo" subtitle="Nombre · referencia blanca activa">
+      <Card title="Guardar como">
         <label className="flex flex-col gap-1">
           <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
             Nombre de captura
@@ -735,7 +655,10 @@ function PanelCaptureSingle({ dash }) {
             className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 disabled:bg-slate-100"
           />
         </label>
-        <dl className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-600">
+        <h3 className="mt-5 font-mono text-[11px] uppercase tracking-wider text-slate-500">
+          Parámetros de este cubo
+        </h3>
+        <dl className="mt-1 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-600">
           <div className="flex justify-between gap-4">
             <dt>Referencia blanca</dt>
             <dd className={dash.activeWhiteReference ? "text-emerald-700" : "text-amber-700"}>
@@ -754,7 +677,7 @@ function PanelCaptureSingle({ dash }) {
       </Card>
 
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md lg:sticky lg:bottom-auto lg:z-0 lg:border-t-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
-        <div className="mx-auto flex max-w-7xl flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-2">
           <p className="font-mono text-[11px] text-slate-500">
             Fase: <span className="text-emerald-700">{phase}</span>
             {capture.capturingCube ? (
@@ -768,9 +691,10 @@ function PanelCaptureSingle({ dash }) {
               capture.commandPending ||
               capture.capturingCube ||
               !capture.canCapture ||
-              !capture.modeActive
+              !capture.modeActive ||
+              !capture.connected
             }
-            className="rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 px-10 py-4 text-lg font-bold tracking-wide text-white shadow-[0_0_24px_rgba(16,185,129,0.35)] transition hover:brightness-110 disabled:opacity-40"
+            className="rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 px-10 py-4 text-lg font-bold tracking-wide text-white shadow-[0_0_24px_rgba(16,185,129,0.35)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {capture.commandPending || capture.capturingCube ? (
               <span className="inline-flex items-center gap-2">
@@ -781,6 +705,20 @@ function PanelCaptureSingle({ dash }) {
               "Capturar cubo"
             )}
           </button>
+          {!capture.connected ? (
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="font-medium text-red-700">
+                Cámara sin conexión
+              </span>
+              <button
+                type="button"
+                onClick={capture.reconnect}
+                className="font-semibold text-red-700 underline underline-offset-2 hover:no-underline"
+              >
+                Reintentar
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -168,13 +168,23 @@ export function classifyMaturityFromIndices(
  * Medias espectrales dentro de cada bbox (GNDVI, CIre, SIPI, VARI) y clase de madurez.
  * Requiere las 5 bandas (R,G,B,RE,NIR) alineadas en resolución a la imagen de detección.
  *
+ * Si se pasan `compensators` (intensidad media 0..255 del cubo blanco por banda),
+ * la reflectancia por píxel se calcula como `banda / (compensador/255)` antes
+ * de calcular cualquier índice.
+ *
  * @param {{ r: string; g: string; b: string; re: string; nir: string }} bandUrls
  * @param {DetectionBox[]} boxes
+ * @param {{ compensators?: import("./cubeCompensators").CompensatorsByBand | null }} [options]
  * @returns {Promise<Array<DetectionBox & { maturity: string; score: number; indices: { gndvi: number; cire: number; sipi: number; vari: number } }>>}
  */
-export async function analyzeStrawberryMaturityInBoxes(bandUrls, boxes) {
+export async function analyzeStrawberryMaturityInBoxes(
+  bandUrls,
+  boxes,
+  options = {}
+) {
   const { w, h, R, G, B, RE, NIR } = await computeFiveBandAlignedReflectance(
-    bandUrls
+    bandUrls,
+    { compensators: options.compensators ?? null }
   );
 
   const out = [];

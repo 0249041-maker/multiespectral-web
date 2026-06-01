@@ -83,54 +83,56 @@ function PanelCalWhiteNew({ dash }) {
 
   return (
     <div className="space-y-4">
-      {dash.opticalExposureMs == null ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Completa primero la <strong>calibración óptica</strong> (enfoque/diafragma) para fijar la
-          exposición del cubo blanco.
-        </p>
-      ) : (
+      {dash.opticalExposureMs != null ? (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-600">
           Exposición óptica: <span className="text-emerald-700">{dash.opticalExposureMs} ms</span>{" "}
           (la cámara usará esta exposición al capturar blancos).
         </p>
-      )}
-
-      <p className="font-mono text-xs text-slate-500">
-        WebSocket:{" "}
-        <code className="rounded bg-slate-100 px-1">{white.wsUrl}</code>
-        <span className={white.connected ? " ml-2 text-emerald-600" : " ml-2 text-amber-600"}>
-          {white.connected ? "conectado" : "desconectado"}
-        </span>
-      </p>
-
-      {white.connectionError ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {white.connectionError}
-        </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        {!white.sessionActive ? (
+      {!white.sessionActive ? (
+        <div className="flex flex-col items-start gap-1.5">
           <button
             type="button"
-            disabled={white.controlsDisabled || !white.hasOpticalExposure}
+            disabled={
+              white.controlsDisabled ||
+              !white.hasOpticalExposure ||
+              !white.connected
+            }
             onClick={white.startWhiteCalibration}
-            className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+            className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Iniciar calibración
           </button>
-        ) : null}
-        <button
-          type="button"
-          disabled={
-            !white.sessionActive || white.controlsDisabled || white.processing
-          }
-          onClick={white.captureWhiteReference}
-          className="rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg disabled:opacity-40"
-        >
-          {white.processing ? "Procesando BMP…" : "Capturar blancos"}
-        </button>
-      </div>
+          {!white.connected ? (
+            <div className="flex items-center gap-2 pl-1 text-[11px]">
+              <span className="font-medium text-red-700">
+                Cámara sin conexión
+              </span>
+              <button
+                type="button"
+                onClick={white.reconnect}
+                className="font-semibold text-red-700 underline underline-offset-2 hover:no-underline"
+              >
+                Reintentar
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={
+              !white.sessionActive || white.controlsDisabled || white.processing
+            }
+            onClick={white.captureWhiteReference}
+            className="rounded-xl bg-gradient-to-r from-violet-600 to-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg disabled:opacity-40"
+          >
+            {white.processing ? "Procesando BMP…" : "Capturar blancos"}
+          </button>
+        </div>
+      )}
 
       {white.showLiveView ? (
         <>
@@ -413,10 +415,7 @@ export default function PanelCalWhite({ dash }) {
     !finish.commandPending;
 
   return (
-    <Card
-      title="Calibración de compensadores blancos"
-      subtitle="Captura nueva referencia por WebSocket o reutiliza un cubo en Supabase Storage."
-    >
+    <Card title="Calibración de blancos">
       <div className="mb-6 flex gap-2 border-b border-slate-200">
         <button
           type="button"

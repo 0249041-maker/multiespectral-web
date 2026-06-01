@@ -8,7 +8,7 @@ import {
 } from "@/lib/yoloStrawberry";
 import { analyzeStrawberryMaturityInBoxes } from "@/lib/strawberryMaturity";
 import { loadImageCrossOrigin } from "@/lib/spectralRgbComposite";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 function iou(a, b) {
   const x1 = Math.max(a.x1, b.x1);
@@ -240,12 +240,15 @@ export default function StrawberryDetectionLab({ children } = {}) {
     spectralRgbBitmap,
     spectralRgbBlob,
     spectralCubeBands,
+    spectralCubeCompensators,
     spectralCubeSelection,
   } = useStrawberryDetection();
   const [busy, setBusy] = useState(false);
   const [localHint, setLocalHint] = useState(null);
   const bitmapRef = useRef(null);
   const canvasRef = useRef(null);
+  /** Última clave (cubeId + imagen) ya analizada automáticamente. */
+  const lastAutoRunRef = useRef(null);
 
   const revokePreview = useCallback(() => {
     if (bitmapRef.current) {
@@ -275,9 +278,7 @@ export default function StrawberryDetectionLab({ children } = {}) {
             ctx.drawImage(bmp, 0, 0);
           }
         }
-        setLocalHint(
-          "Imagen lista. Pulsa «Detectar frutos» para ejecutar YOLOv11 (ONNX)."
-        );
+        setLocalHint("Imagen lista. La detección se ejecutará en breve…");
       } catch {
         setLocalHint("No se pudo leer la imagen.");
       }
@@ -347,7 +348,8 @@ export default function StrawberryDetectionLab({ children } = {}) {
           const mappedSpectral = scaleBoxes(mapped, sx, sy);
           const analyzed = await analyzeStrawberryMaturityInBoxes(
             spectralCubeBands,
-            mappedSpectral
+            mappedSpectral,
+            { compensators: spectralCubeCompensators ?? null }
           );
           boxesForUi = scaleBoxes(analyzed, 1 / sx, 1 / sy).map((b, i) => ({
             ...mapped[i],
@@ -431,8 +433,43 @@ export default function StrawberryDetectionLab({ children } = {}) {
     spectralRgbBitmap,
     spectralRgbBlob,
     spectralCubeBands,
+    spectralCubeCompensators,
     spectralCubeSelection?.id,
   ]);
+
+  // Clave de auto-detección: solo el cubo. Cambiar el índice (NDVI, GNDVI, …)
+  // mantiene la misma clave y por tanto NO relanza YOLO mientras sigas en el
+  // mismo cubo. Cambiar de cubo sí dispara una nueva inferencia.
+  const autoTriggerKey = useMemo(() => {
+    const cubeId = spectralCubeSelection?.id ?? null;
+    if (!cubeId) return null;
+    const hasImage = Boolean(spectralRgbBitmap || spectralRgbBlob);
+    if (!hasImage) return null;
+    return cubeId;
+  }, [spectralCubeSelection?.id, spectralRgbBitmap, spectralRgbBlob]);
+
+  // Al seleccionar un cubo y tener RGB listo, lanza YOLO en idle (no bloquea
+  // el primer paint del RGB ni la UI). Solo una vez por par cubo+imagen.
+  useEffect(() => {
+    if (!autoTriggerKey) return undefined;
+    if (lastAutoRunRef.current === autoTriggerKey) return undefined;
+    if (busy) return undefined;
+
+    lastAutoRunRef.current = autoTriggerKey;
+    const w = typeof window !== "undefined" ? window : null;
+    const schedule =
+      w && typeof w.requestIdleCallback === "function"
+        ? (cb) => w.requestIdleCallback(cb, { timeout: 1500 })
+        : (cb) => setTimeout(cb, 250);
+    const cancel =
+      w && typeof w.cancelIdleCallback === "function"
+        ? (h) => w.cancelIdleCallback(h)
+        : (h) => clearTimeout(h);
+    const handle = schedule(() => {
+      void runDetection();
+    });
+    return () => cancel(handle);
+  }, [autoTriggerKey, busy, runDetection]);
 
   return (
     <section
@@ -442,48 +479,6 @@ export default function StrawberryDetectionLab({ children } = {}) {
       <h2 className="text-xl font-semibold text-slate-900">
         Detección y resultados
       </h2>
-
-      {spectralRgbBitmap ? (
-        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-          <span className="font-semibold">RGB multiespectral listo</span> (
-          {spectralRgbBitmap.width}×{spectralRgbBitmap.height} px). «Detectar
-          frutos» usará esta imagen antes que un archivo subido.
-        </p>
-      ) : spectralRgbBlob ? (
-        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-          <span className="font-semibold">RGB multiespectral listo</span>.
-          «Detectar frutos» lo usará aunque no haya bitmap persistido.
-        </p>
-      ) : null}
-
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          onChange={onFileChange}
-          className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-emerald-700"
-        />
-        <button
-          type="button"
-          disabled={busy}
-          onClick={runDetection}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
-        >
-          {busy ? "Procesando…" : "Detectar frutos"}
-        </button>
-      </div>
-
-      <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        <span className="font-semibold text-slate-700">Modelo:</span>{" "}
-        <code className="rounded bg-white px-1">{getDefaultModelUrl()}</code>{" "}
-        (o variable{" "}
-        <code className="rounded bg-white px-1">VITE_YOLO_STRAWBERRY_MODEL_URL</code>
-        ). Exporta desde Ultralytics con{" "}
-        <code className="rounded bg-white px-1">
-          format=&quot;onnx&quot;, nms=True, imgsz=640
-        </code>
-        .
-      </p>
 
       {localHint && (
         <p className="mt-2 text-sm text-slate-600">{localHint}</p>
@@ -500,6 +495,42 @@ export default function StrawberryDetectionLab({ children } = {}) {
       </div>
 
       {children}
+
+      <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+          Probar Detección
+        </summary>
+
+        {spectralRgbBitmap ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            <span className="font-semibold">RGB multiespectral listo</span> (
+            {spectralRgbBitmap.width}×{spectralRgbBitmap.height} px). «Detectar
+            frutos» usará esta imagen antes que un archivo subido.
+          </p>
+        ) : spectralRgbBlob ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            <span className="font-semibold">RGB multiespectral listo</span>.
+            «Detectar frutos» lo usará aunque no haya bitmap persistido.
+          </p>
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={onFileChange}
+            className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-emerald-700"
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={runDetection}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
+          >
+            {busy ? "Procesando…" : "Detectar frutos"}
+          </button>
+        </div>
+      </details>
     </section>
   );
 }

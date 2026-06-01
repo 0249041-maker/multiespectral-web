@@ -50,6 +50,17 @@ function buildFruitMask({ width, height, boxes, sx, sy }) {
 }
 
 /**
+ * Factor `255/compensador` (con compensador en 0..255). Si no es válido → 1.
+ * @param {number | null | undefined} comp
+ */
+function compFactor(comp) {
+  const n = Number(comp);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  const norm = n / 255;
+  return norm > 1e-3 ? 1 / norm : 1;
+}
+
+/**
  * Calcula NDVI promedio sobre píxeles de hoja (no-fruto).
  *
  * @param {{
@@ -58,6 +69,7 @@ function buildFruitMask({ width, height, boxes, sx, sy }) {
  *   boxes: Array<{x1:number,y1:number,x2:number,y2:number}> | null | undefined,
  *   imageWidth: number,
  *   imageHeight: number,
+ *   compensators?: import("./cubeCompensators").CompensatorsByBand | null,
  * }} params
  * @returns {Promise<{ mean: number | null, pixels: number, boxesCount: number }>}
  */
@@ -67,6 +79,7 @@ export async function computeLeafNdvi({
   boxes,
   imageWidth,
   imageHeight,
+  compensators = null,
 }) {
   if (!redUrl || !nirUrl) {
     return { mean: null, pixels: 0, boxesCount: 0 };
@@ -92,6 +105,9 @@ export async function computeLeafNdvi({
   const shift = align(nirImg);
   const nirLum = applyShiftFloat32(nirLumRaw, w, h, shift.dx, shift.dy);
 
+  const fR = compFactor(compensators?.r);
+  const fNir = compFactor(compensators?.nir);
+
   const validBoxes =
     Array.isArray(boxes) && boxes.length > 0 && imageWidth > 0 && imageHeight > 0
       ? boxes
@@ -108,8 +124,8 @@ export async function computeLeafNdvi({
   let count = 0;
   for (let i = 0; i < n; i++) {
     if (mask && mask[i]) continue;
-    const rVal = redLum[i];
-    const nVal = nirLum[i];
+    const rVal = redLum[i] * fR;
+    const nVal = nirLum[i] * fNir;
     let ndvi = (nVal - rVal) / (nVal + rVal + EPS);
     if (ndvi < -1) ndvi = -1;
     if (ndvi > 1) ndvi = 1;
